@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+build
+coverage
+*.tsbuildinfo
+.env*
+.DS_Store
+lariba-app/
+code
+test-track.mjs
