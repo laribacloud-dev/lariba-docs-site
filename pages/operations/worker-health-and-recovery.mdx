@@ -1,0 +1,203 @@
+# Worker Health and Recovery
+
+Lariba Cloud uses dedicated background workers to process operational work outside the request-response lifecycle.
+
+The worker runtime currently supervises two critical components:
+
+- **Delivery** — processes outbound delivery attempts, retries, and related recovery work.
+- **Alert** — processes alert delivery and retry activity.
+
+Worker health evidence helps operators distinguish a healthy runtime from a stalled, degraded, replaced, or failed worker.
+
+> Worker health is operational evidence. It does not replace delivery-attempt history, replay audits, retry audits, or other project-scoped records.
+
+---
+
+## Runtime model
+
+The API runtime and worker runtime have separate responsibilities.
+
+| Runtime | Responsibility |
+| --- | --- |
+| API | Authentication, authorization, configuration, ingestion, queries, and control-plane requests |
+| Worker | Background delivery, alert processing, retries, recovery, and heartbeat publication |
+
+A dedicated worker process starts the supervised components and records runtime evidence while they are active.
+
+This separation prevents normal API requests from owning long-running background execution.
+
+---
+
+## Worker identity
+
+Each worker boot receives a distinct runtime identity.
+
+The identity is stable for the lifetime of that process and changes when the worker is reconstructed or restarted.
+
+This allows Lariba Cloud to:
+
+- identify the active worker;
+- preserve evidence for a previous worker;
+- distinguish a restart from a delayed heartbeat;
+- verify that a replacement process is advancing independently.
+
+Worker identities exposed through operational status surfaces are sanitized and are not credentials.
+
+---
+
+## Heartbeats
+
+A heartbeat records that the worker runtime is alive and able to publish operational evidence.
+
+Heartbeat evidence includes:
+
+- the worker identity;
+- the deployed release;
+- the most recent heartbeat time;
+- component activity;
+- lifecycle state.
+
+A recent heartbeat alone is not sufficient to prove that every component is healthy. Component success evidence must also continue to advance.
+
+---
+
+## Health states
+
+Worker status is derived from lifecycle and heartbeat evidence.
+
+| State | Meaning |
+| --- | --- |
+| **Healthy** | The worker is active, heartbeat evidence is current, and supervised components are advancing |
+| **Degraded** | The worker is active, but one or more component signals require investigation |
+| **Stale** | Expected heartbeat or component evidence is no longer current |
+| **Failed** | The worker reached a terminal failure state |
+| **Stopped** | The worker ended without remaining active |
+
+Historical worker records may remain visible after replacement. A failed historical worker does not mean the current replacement worker is unhealthy.
+
+Operators should confirm which worker identity is active before interpreting a historical record.
+
+---
+
+## Critical component failure
+
+Alert and Delivery are treated as critical supervised components.
+
+When a critical component exits unexpectedly:
+
+1. the supervisor detects the component exit;
+2. the current worker is classified as failed;
+3. the worker process exits with a non-zero result;
+4. the hosting runtime reconstructs the worker process;
+5. the replacement worker starts with a new identity;
+6. heartbeat and component-success evidence begin advancing again.
+
+The failed worker record remains available as operational evidence.
+
+Lariba Cloud does not silently present the failed worker as healthy after reconstruction.
+
+---
+
+## Recovery verification
+
+A restart is not considered recovered solely because a new process exists.
+
+Recovery verification requires evidence that:
+
+- a new worker identity is active;
+- the previous worker remains terminal and no longer advances;
+- the replacement heartbeat advances across multiple samples;
+- Alert and Delivery component evidence advances;
+- the deployed release is the expected release;
+- no repeated restart loop is present.
+
+Operators should observe the replacement worker across more than one sample before declaring the runtime stable.
+
+---
+
+## Data integrity during recovery
+
+Worker reconstruction must not create unrelated operational mutations.
+
+Post-recovery verification should confirm that:
+
+- delivery-attempt totals are unchanged unless real work was processed;
+- replay and retry audit totals remain consistent;
+- alert-delivery totals remain consistent;
+- channel and protected-header records remain unchanged;
+- no unexpected claims remain active;
+- no long-running recovery transaction remains open.
+
+Worker health evidence and project-scoped delivery evidence serve different purposes and should be reviewed together.
+
+---
+
+## Authorization
+
+Worker health information is restricted to authorized workspace roles.
+
+Authorization is evaluated within the selected organization and project context. A user must not gain worker-health visibility across tenant boundaries.
+
+Mutation permissions for delivery channels, retries, replay, or other operational actions are evaluated separately from worker-health visibility.
+
+---
+
+## Production acceptance
+
+Worker Heartbeat and Supervision v1 completed controlled production acceptance on **23 July 2026**.
+
+The acceptance verified that:
+
+- a critical Alert-component exit was detected;
+- the current worker was classified as failed;
+- the worker runtime exited non-zero;
+- the hosting runtime reconstructed the worker automatically;
+- the replacement process received a new boot identity;
+- both supervised components restarted;
+- heartbeat and component-success evidence resumed;
+- the replacement remained stable beyond the initial recovery window;
+- project-scoped delivery and audit totals remained unchanged;
+- no repeated restart loop occurred.
+
+The controlled acceptance path is restricted to internal operational tooling and is not exposed as a public API.
+
+---
+
+## What application developers should expect
+
+A worker restart can briefly delay asynchronous processing.
+
+During recovery:
+
+- accepted API requests remain governed by their normal API contracts;
+- queued background work remains subject to retry and claim semantics;
+- delivery history remains the authoritative record for outbound attempts;
+- audit evidence remains available for replay and recovery actions;
+- operational status may temporarily show both the failed worker and its healthy replacement.
+
+Applications should continue to use idempotency and retry-safe integration patterns.
+
+---
+
+## Current boundaries
+
+Worker health currently provides process and component-level evidence.
+
+It does not currently represent:
+
+- a contractual service-level objective;
+- end-to-end latency for every delivery;
+- downstream provider availability;
+- customer endpoint health;
+- successful processing of an individual event.
+
+Use delivery-attempt history and project-specific observability to investigate individual events.
+
+---
+
+## Related documentation
+
+- [Event Ingestion](/guides/event-ingestion)
+- [Webhooks](/guides/webhooks)
+- [Events API](/reference/events)
+- [Logs](/reference/logs)
