@@ -1,0 +1,241 @@
+# API Keys
+
+Lariba Cloud API keys provide machine authentication for project-scoped API access and event ingestion.
+
+Use the `X-API-Key` request header when calling an endpoint that accepts API-key authentication.
+
+```text
+X-API-Key: YOUR_API_KEY
+```
+
+Never place an API key in a URL, event payload, log entry, screenshot, client-side bundle, or source-control repository.
+
+## Key categories
+
+Lariba Cloud exposes three related key categories:
+
+| Category | Purpose |
+| --- | --- |
+| Project API key | Machine access to project-scoped APIs according to its configured scope |
+| Source-linked server key | Server-side ingestion and source operations for one Event Source |
+| Browser-safe source key | Browser ingestion constrained by allowed origins, event types, and rate limits |
+
+A key can be linked to an Event Source through `source_id`. List and identity responses indicate whether a key is source-linked.
+
+## Project API-key endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/api-keys` | Create an API key |
+| `GET` | `/v1/api-keys` | List API-key metadata |
+| `GET` | `/v1/api-keys/me` | Resolve the current API-key identity |
+| `GET` | `/v1/api-keys/ping` | Verify API-key authentication |
+| `POST` | `/v1/api-keys/{api_key_id}/revoke` | Revoke an API key |
+
+The bootstrap endpoint also exists for controlled administrative initialization:
+
+```text
+POST /v1/api-keys/bootstrap
+```
+
+Treat bootstrap credentials and bootstrap workflows as restricted operational controls.
+
+## Create an API key
+
+### Request
+
+```json
+{
+  "project_id": "PROJECT_UUID",
+  "name": "CI ingestion key",
+  "scope": "events:write",
+  "expires_at": "2026-12-31T23:59:59Z",
+  "source_id": "SOURCE_UUID"
+}
+```
+
+| Field | Requirement | Constraints | Description |
+| --- | --- | --- | --- |
+| `project_id` | Required | UUID | Project that owns the key |
+| `name` | Required | 1–200 characters | Human-readable key name |
+| `scope` | Optional | 1–100 characters | Scope string; defaults to `default` |
+| `expires_at` | Optional | ISO 8601 date-time | Expiration time |
+| `source_id` | Optional | UUID | Event Source linked to the key |
+
+### Response
+
+Creation responses include the plaintext key together with its identity and metadata:
+
+```json
+{
+  "api_key_id": "API_KEY_ID",
+  "project_id": "PROJECT_ID",
+  "name": "CI ingestion key",
+  "scope": "events:write",
+  "key_prefix": "KEY_PREFIX",
+  "api_key": "NEW_PLAINTEXT_API_KEY",
+  "expires_at": "2026-12-31T23:59:59Z",
+  "source_id": "SOURCE_ID"
+}
+```
+
+Store the `api_key` value immediately in an approved secret store.
+
+Subsequent list and identity responses expose metadata such as `key_prefix`, status, scope, timestamps, and source linkage. They do not expose the plaintext key field.
+
+## List response metadata
+
+API-key list items include:
+
+| Field | Description |
+| --- | --- |
+| `id` | API-key identity |
+| `name` | Human-readable name |
+| `key_prefix` | Non-secret prefix used for identification |
+| `scope` | Effective scope string |
+| `status` | `active`, `expired`, or `revoked` |
+| `created_at` | Creation timestamp |
+| `last_used_at` | Most recent successful use, when available |
+| `expires_at` | Expiration timestamp, when configured |
+| `revoked_at` | Revocation timestamp, when revoked |
+| `source_id` | Linked Event Source, when present |
+| `source_name` | Linked source name |
+| `source_environment` | Linked source environment |
+| `source_type` | Linked source type |
+| `is_source_linked` | Whether the key belongs to an Event Source |
+
+The `/v1/api-keys/me` response also identifies the current project and key context.
+
+## Source-linked server keys
+
+Creating an Event Source returns the source and a new server-side API key:
+
+```text
+POST /v1/ingest-sources
+```
+
+The source creation response includes:
+
+- `api_key_id`;
+- plaintext `api_key`;
+- `key_prefix`;
+- source metadata;
+- source-limit counters.
+
+A newly created source-linked server key is assigned these scopes by the current backend implementation:
+
+```text
+events:write
+events:read
+projects:read
+```
+
+The key is stored with a non-secret prefix and a hash. The stored model tracks creation, last use, expiration, and revocation timestamps.
+
+## Rotate a source key
+
+```text
+POST /v1/ingest-sources/{source_id}/rotate-key
+```
+
+A successful rotation response includes:
+
+- the Event Source;
+- the new `api_key_id`;
+- the new plaintext `api_key`;
+- the new `key_prefix`;
+- `revoked_previous`, indicating whether the previous key was revoked.
+
+Update the producing service with the new key, verify ingestion, and remove the old secret from deployment systems.
+
+A revoked source key is rejected by ingestion.
+
+## Revoke a project API key
+
+```text
+POST /v1/api-keys/{api_key_id}/revoke
+```
+
+Revocation changes the key status and records `revoked_at`.
+
+Do not delete historical event or audit evidence solely because its credential has been revoked.
+
+## Browser-safe source keys
+
+Browser-safe keys are managed under an Event Source:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/ingest-sources/{source_id}/browser-keys` | Create a browser-safe key |
+| `GET` | `/v1/ingest-sources/{source_id}/browser-keys` | List browser-safe key metadata |
+| `POST` | `/v1/ingest-sources/{source_id}/browser-keys/{key_id}/test` | Test origin and event-type restrictions |
+| `POST` | `/v1/ingest-sources/{source_id}/browser-keys/{key_id}/revoke` | Revoke a browser-safe key |
+
+Creation requires at least one allowed origin.
+
+```json
+{
+  "name": "Website Browser Key",
+  "allowed_origins": [
+    "https://app.example.com"
+  ],
+  "allowed_event_types": [
+    "website.page_view",
+    "website.error"
+  ],
+  "rate_limit_per_minute": 60
+}
+```
+
+Browser-key controls include:
+
+- up to 20 allowed origins;
+- up to 20 allowed event types;
+- a configurable per-minute limit from 1 to 10,000;
+- a default rate limit of 60 requests per minute.
+
+A browser-safe key is still a credential. Origin and event-type restrictions reduce exposure but do not make the value non-sensitive.
+
+## Key status
+
+Lariba Cloud derives these API-key states:
+
+| Status | Meaning |
+| --- | --- |
+| `active` | Not revoked and not past its expiration time |
+| `expired` | The configured expiration time has passed |
+| `revoked` | A revocation timestamp is present |
+
+Revocation takes precedence over expiration when status is calculated.
+
+## Storage and disclosure
+
+The backend stores:
+
+- `key_prefix` for identification;
+- `key_hash` for authentication;
+- `key_kind`;
+- source and project relationships;
+- scope data;
+- lifecycle timestamps.
+
+Creation and rotation responses contain the plaintext credential because the caller must store the new value. Normal list and status responses return metadata rather than the raw credential.
+
+## Operational handling
+
+Apply these controls to every API key:
+
+1. assign the minimum required scope;
+2. use a separate key for each environment and producer;
+3. store the value in a managed secret system;
+4. never commit it to source control;
+5. monitor `last_used_at`, expiration, and revocation state;
+6. rotate it after suspected exposure;
+7. revoke it when the integration is retired.
+
+## Related documentation
+
+- [Events API](/reference/events)
+- [Event Ingestion guide](/guides/event-ingestion)
+- [API Keys concept](/concepts/api-keys)
+- [Authentication](/authentication)

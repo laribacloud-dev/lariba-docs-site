@@ -1,0 +1,255 @@
+# Event Ingestion
+
+Event ingestion is the entry point for operational events produced by applications, services, workers, scheduled jobs, and external systems.
+
+Lariba Cloud accepts these events through the external ingestion endpoint:
+
+`POST /v1/events/ingest`
+
+The request is authenticated with an API key linked to the destination project or Event Source.
+
+## Prerequisites
+
+Before sending an event, you need:
+
+1. a Lariba Cloud project;
+2. an Event Source or project API key;
+3. an API key with the `events:write` scope;
+4. the Lariba Cloud API base URL.
+
+Store the base URL and API key as environment variables:
+
+```bash
+export LARIBA_API_BASE_URL="https://your-lariba-api.example"
+export LARIBA_SOURCE_API_KEY="YOUR_API_KEY"
+```
+
+Do not place API keys directly in source code, committed configuration files, browser bundles, logs, or screenshots.
+
+## Minimal event
+
+Send a minimal event with `event_type` and `source`:
+
+```bash
+curl --request POST \
+  "${LARIBA_API_BASE_URL}/v1/events/ingest" \
+  --header "Content-Type: application/json" \
+  --header "X-API-Key: $LARIBA_SOURCE_API_KEY" \
+  --data '{
+    "event_type": "order.created",
+    "source": "checkout-service"
+  }'
+```
+
+A successful request returns HTTP `200`.
+
+## Authentication
+
+External event ingestion uses the `X-API-Key` request header:
+
+`X-API-Key: YOUR_API_KEY`
+
+The key must be active and must authorize the `events:write` scope.
+
+Possible authentication failures include:
+
+| Status | Meaning |
+| --- | --- |
+| `401` | The `X-API-Key` header is missing |
+| `401` | The supplied API key is invalid |
+| `403` | The source-linked key has been revoked |
+| `403` | The associated Event Source is disabled |
+| `403` | The key does not authorize `events:write` |
+
+Rotate or revoke a credential immediately when exposure is suspected.
+
+## Request body
+
+The ingestion request accepts the following fields.
+
+| Field | Required | Constraints | Purpose |
+| --- | --- | --- | --- |
+| `event_type` | Yes | 1–200 characters | Stable event classification |
+| `source` | Yes | 1–200 characters | Producer or source identity |
+| `severity` | No | 1–50 characters | Operational severity |
+| `message` | No | 1–2000 characters | Human-readable summary |
+| `status` | No | 1–100 characters | Producer-defined event status |
+| `event_id` | No | 1–200 characters | External event identifier |
+| `timestamp` | No | ISO 8601 date-time | Time assigned by the producer |
+| `payload` | No | JSON object | Event-specific structured data |
+| `properties` | No | JSON object | Additional searchable properties |
+| `environment` | No | 1–100 characters | Environment such as production or staging |
+
+## Complete example
+
+```json
+{
+  "event_type": "payment.failed",
+  "source": "billing-service",
+  "severity": "high",
+  "message": "Payment authorization was declined",
+  "status": "failed",
+  "event_id": "payment-event-9841",
+  "timestamp": "2026-07-24T00:42:00Z",
+  "environment": "production",
+  "payload": {
+    "payment_provider": "example-provider",
+    "attempt": 2
+  },
+  "properties": {
+    "region": "eu-west",
+    "customer_tier": "business"
+  }
+}
+```
+
+Use stable event types such as `payment.failed`, `order.created`, or `worker.restarted`. Avoid embedding unique identifiers in `event_type`.
+
+## Property normalization
+
+Lariba Cloud normalizes the request before persistence.
+
+When both `payload` and `properties` are provided:
+
+1. values from `payload` are added first;
+2. values from `properties` are added afterward;
+3. `properties` takes precedence when both objects contain the same key.
+
+The following top-level fields are also represented in the normalized event properties when supplied:
+
+- `source`;
+- `severity`;
+- `message`;
+- `status`;
+- `environment`;
+- `event_id`.
+
+The external `event_id` is mapped to the response field `external_event_id`.
+
+Use `properties` for values that should be directly available during filtering, investigation, or operational analysis.
+
+## Idempotent ingestion
+
+Use the optional `Idempotency-Key` header when retrying a request must not create another logical ingestion result.
+
+```bash
+curl --request POST \
+  "${LARIBA_API_BASE_URL}/v1/events/ingest" \
+  --header "Content-Type: application/json" \
+  --header "X-API-Key: $LARIBA_SOURCE_API_KEY" \
+  --header "Idempotency-Key: payment-event-9841" \
+  --data '{
+    "event_type": "payment.failed",
+    "source": "billing-service",
+    "event_id": "payment-event-9841"
+  }'
+```
+
+Idempotency behavior:
+
+- the key is trimmed before use;
+- an empty key is rejected with HTTP `422`;
+- a key longer than 200 characters is rejected with HTTP `422`;
+- idempotency records are retained for approximately 24 hours;
+- the same key with the same normalized request returns the stored response;
+- a repeated stored response sets `duplicate` to `true`;
+- the same key with a different normalized request returns HTTP `409`;
+- an in-progress request using the same key can also return HTTP `409`.
+
+Use a stable key derived from the producer’s own event or operation identifier.
+
+## Successful response
+
+A successful ingestion response includes the accepted event identity, normalized properties, and persistence metadata.
+
+```json
+{
+  "accepted": true,
+  "project_id": "PROJECT_UUID",
+  "api_key_id": "API_KEY_UUID",
+  "ingested_event_id": "INGESTED_EVENT_UUID",
+  "external_event_id": "payment-event-9841",
+  "event_type": "payment.failed",
+  "timestamp": "2026-07-24T00:42:00Z",
+  "properties": {
+    "source": "billing-service",
+    "severity": "high",
+    "environment": "production"
+  },
+  "duplicate": false,
+  "ingest_mode": "synchronous",
+  "persisted_synchronously": true
+}
+```
+
+Response fields:
+
+| Field | Meaning |
+| --- | --- |
+| `accepted` | Whether Lariba Cloud accepted the event |
+| `project_id` | Destination project |
+| `api_key_id` | Credential used for ingestion |
+| `ingested_event_id` | Lariba Cloud event identity |
+| `external_event_id` | Producer-provided `event_id`, when present |
+| `event_type` | Accepted event type |
+| `timestamp` | Effective event timestamp |
+| `properties` | Normalized event properties |
+| `duplicate` | Whether an idempotent response was reused |
+| `ingest_mode` | Runtime ingestion mode, when available |
+| `persisted_synchronously` | Whether persistence completed synchronously, when available |
+
+The `ingest_mode` and `persisted_synchronously` fields may be `null` when that runtime information is unavailable.
+
+## Semantic response headers
+
+Lariba Cloud can also return ingestion semantics through these response headers:
+
+| Header | Meaning |
+| --- | --- |
+| `X-Lariba-Ingest-Mode` | Processing mode used for the request |
+| `X-Lariba-Persisted-Synchronously` | Whether the event was persisted synchronously |
+
+Applications should use the JSON response as the primary result and treat these headers as additional operational context.
+
+## Validation and conflict responses
+
+| Status | Category | Typical cause |
+| --- | --- | --- |
+| `200` | Accepted | Event accepted or idempotent response reused |
+| `401` | Authentication | Missing or invalid API key |
+| `403` | Authorization | Revoked key, disabled source, or missing scope |
+| `409` | Idempotency conflict | Key reused with another request or request still in progress |
+| `422` | Validation | Invalid request body or invalid idempotency key |
+
+Do not retry every error automatically.
+
+Recommended behavior:
+
+- retry transient network and server failures with bounded exponential backoff;
+- reuse the same idempotency key for retries of the same logical event;
+- correct request validation errors before retrying;
+- stop and rotate credentials after an authentication failure caused by an invalid or revoked key;
+- investigate HTTP `409` before generating a different idempotency key.
+
+## Production integration checklist
+
+Before enabling a producer in production:
+
+1. use a dedicated Event Source;
+2. grant only the required scopes;
+3. store the API key in a secret manager;
+4. define a stable event-type naming convention;
+5. include an external `event_id` when the producer has one;
+6. use idempotency for retryable operations;
+7. exclude credentials and sensitive payload values from logs;
+8. test authentication and validation failures;
+9. monitor accepted, rejected, and duplicate events;
+10. document key rotation and revocation procedures.
+
+## Related documentation
+
+- [Events API reference](/reference/events)
+- [API Keys guide](/api-keys)
+- [API Keys concept](/concepts/api-keys)
+- [API Keys reference](/reference/api-keys)
+- [Authentication](/authentication)

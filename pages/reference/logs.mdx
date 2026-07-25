@@ -1,0 +1,579 @@
+# Logs API
+
+The Logs API provides a project-scoped operational view over Lariba Cloud events.
+
+It exposes two authenticated endpoints:
+
+```text
+GET /v1/logs
+GET /v1/logs/stream
+```
+
+`GET /v1/logs` returns a filtered JSON array. `GET /v1/logs/stream` returns a live Server-Sent Events stream.
+
+## Data model
+
+The Logs API currently projects rows from the project’s event records. It is not a separate raw application-log ingestion system.
+
+For each event, Lariba Cloud derives an HTTP-oriented log representation containing:
+
+- method;
+- endpoint;
+- status;
+- latency;
+- API-key prefix;
+- project name;
+- request body;
+- response body.
+
+When an event does not provide explicit HTTP metadata, the API derives safe fallback values from the event name and properties.
+
+## Authentication and access
+
+Both endpoints require a human-user Bearer access token:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+A project viewer has sufficient read access. Organization membership is authoritative for access to projects in that organization.
+
+Example header:
+
+```bash
+--header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+The required `project_id` query parameter determines the project scope. A user without authoritative access to that project receives an authorization error.
+
+## List logs
+
+```text
+GET /v1/logs
+```
+
+### Query parameters
+
+| Parameter | Type | Required | Default | Constraints |
+| --- | --- | --- | --- | --- |
+| `project_id` | UUID | Yes | — | Accessible project |
+| `range` | String | No | `24h` | `15m`, `1h`, `24h`, `7d`, `30d`, or `all` |
+| `method` | String | No | — | Case-insensitive exact method match; `ALL` disables the method filter |
+| `hide_noise` | Boolean | No | `false` | Excludes `/health` and `/favicon.ico` |
+| `query` | String | No | — | Case-insensitive substring search |
+| `limit` | Integer | No | `100` | Minimum `1`, maximum `500` |
+
+The `query` filter searches these derived values:
+
+- endpoint;
+- method;
+- event name;
+- project name.
+
+It does not perform arbitrary full-text search across every request or response field.
+
+### Time ranges
+
+| Value | Window |
+| --- | --- |
+| `15m` | Previous 15 minutes |
+| `1h` | Previous hour |
+| `24h` | Previous 24 hours |
+| `7d` | Previous 7 days |
+| `30d` | Previous 30 days |
+| `all` | From 1 January 1970 through the current time |
+
+Results are ordered by event timestamp in descending order.
+
+### Example request
+
+```bash
+curl --silent --show-error   --request GET   "${LARIBA_API_BASE_URL}/v1/logs?project_id=${LARIBA_PROJECT_ID}&range=1h&method=POST&hide_noise=true&limit=100"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+Search by endpoint, method, event name, or project name:
+
+```bash
+curl --silent --show-error   --get   "${LARIBA_API_BASE_URL}/v1/logs"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --data-urlencode "project_id=$LARIBA_PROJECT_ID"   --data-urlencode "range=24h"   --data-urlencode "query=checkout"   --data-urlencode "limit=50"
+```
+
+## Log response
+
+A successful list request returns an array of log rows:
+
+```json
+[
+  {
+    "id": "EVENT_UUID",
+    "timestamp": "2026-07-24T18:42:11.123456+00:00",
+    "method": "POST",
+    "endpoint": "/v1/orders",
+    "status": 200,
+    "latency_ms": 84,
+    "latency_bucket": "fast",
+    "latency_color": "green",
+    "api_key_prefix": "lk_ab123",
+    "project": "Checkout Production",
+    "request_body": {
+      "order_id": "ORDER_REFERENCE"
+    },
+    "response_body": {
+      "accepted": true
+    }
+  }
+]
+```
+
+Every row contains these fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | String | Event identifier |
+| `timestamp` | String | UTC ISO 8601 event timestamp |
+| `method` | String | Explicit or derived method |
+| `endpoint` | String | Explicit or derived endpoint |
+| `status` | Integer | Explicit or derived status code |
+| `latency_ms` | Integer | Explicit or derived non-negative latency |
+| `latency_bucket` | String | `fast`, `slow`, or `very_slow` |
+| `latency_color` | String | `green`, `yellow`, or `red` |
+| `api_key_prefix` | String | Explicit prefix, derived key identifier prefix, or `dashboard` |
+| `project` | String | Project name |
+| `request_body` | Object | Explicit request object or generated fallback |
+| `response_body` | Object | Explicit response object or generated fallback |
+
+The API always returns an array. It does not currently return pagination metadata, a cursor, an offset, or a total count.
+
+## Field derivation
+
+The API derives log fields from event properties using the following precedence.
+
+### Method
+
+The first available property is used:
+
+```text
+method
+http_method
+```
+
+The value is converted to uppercase. When neither property exists, the method is:
+
+```text
+EVENT
+```
+
+### Endpoint
+
+The first available property is used:
+
+```text
+endpoint
+path
+route
+```
+
+When none exists, the fallback is:
+
+```text
+/events/{event_name}
+```
+
+### Status
+
+An explicit `status_code` property takes precedence.
+
+Without `status_code`, the API derives a status from `status`, `severity`, and the event name:
+
+| Input | Derived status |
+| --- | ---: |
+| `status` is `error`, `failed`, or `failure` | `500` |
+| `status` is `warning` | `400` |
+| `status` is `triggered`, `success`, `ok`, or `info` | `200` |
+| `severity` is `critical` | `500` |
+| `severity` is `warning` | `400` |
+| Event name contains `error` | `500` |
+| No matching signal | `200` |
+
+These are projection rules for the Logs API. They do not prove that an actual HTTP request returned the derived status.
+
+### Latency
+
+The first available value is used:
+
+```text
+latency_ms
+duration_ms
+response_time_ms
+elapsed_ms
+```
+
+The value is converted to a non-negative integer. Missing or invalid latency becomes `0`.
+
+Latency classification is:
+
+| Latency | Bucket | Colour |
+| --- | --- | --- |
+| Less than 100 ms | `fast` | `green` |
+| 100–299 ms | `slow` | `yellow` |
+| 300 ms or more | `very_slow` | `red` |
+
+### API-key prefix
+
+The first available event property is used:
+
+```text
+api_key_prefix
+api_key
+key
+```
+
+When these are absent but the event has an API-key identifier, the first eight characters of that identifier are returned.
+
+When no API-key information is available, the value is:
+
+```text
+dashboard
+```
+
+Do not place plaintext API keys in event properties. A property named `api_key` or `key` can be projected into the log response.
+
+### Request body
+
+The API uses an object from:
+
+```text
+request
+request_body
+```
+
+When neither value is an object, it generates:
+
+```json
+{
+  "event": "EVENT_NAME",
+  "properties": {
+    "example": "value"
+  }
+}
+```
+
+The fallback includes the event’s properties. Do not ingest secrets, credentials, authorization headers, or unnecessary personal data as event properties.
+
+### Response body
+
+The API uses an object from:
+
+```text
+response
+response_body
+```
+
+When neither value is an object, it generates:
+
+```json
+{
+  "accepted": true,
+  "event": "EVENT_NAME",
+  "status_code": 200
+}
+```
+
+## Hide noise
+
+Set `hide_noise=true` to exclude events whose derived endpoint is exactly:
+
+```text
+/health
+/favicon.ico
+```
+
+Other health, readiness, metrics, polling, or static-asset paths are not automatically removed by this setting.
+
+## Stream logs
+
+```text
+GET /v1/logs/stream
+```
+
+The stream requires only:
+
+| Parameter | Type | Required |
+| --- | --- | --- |
+| `project_id` | UUID | Yes |
+
+The stream does not accept the list endpoint’s `range`, `method`, `hide_noise`, `query`, or `limit` filters.
+
+### Runtime media type
+
+The current OpenAPI snapshot represents the successful stream response as an unspecified JSON response. The runtime implementation returns:
+
+```text
+Content-Type: text/event-stream
+```
+
+Client implementations should follow the runtime Server-Sent Events contract.
+
+### Connect with curl
+
+```bash
+curl --no-buffer --silent --show-error   --request GET   "${LARIBA_API_BASE_URL}/v1/logs/stream?project_id=${LARIBA_PROJECT_ID}"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+The response remains open until the client disconnects or the connection is interrupted.
+
+### SSE framing
+
+Each message uses a `data:` field followed by a JSON object and a blank line:
+
+```text
+data: {"type":"log","log":{"id":"EVENT_UUID","method":"POST"}}
+
+```
+
+The stream does not currently assign SSE `id` or `event` fields.
+
+### Log event
+
+A log message has this shape:
+
+```json
+{
+  "type": "log",
+  "log": {
+    "id": "EVENT_UUID",
+    "timestamp": "2026-07-24T18:42:11.123456+00:00",
+    "method": "POST",
+    "endpoint": "/v1/orders",
+    "status": 200,
+    "latency_ms": 84,
+    "latency_bucket": "fast",
+    "latency_color": "green",
+    "api_key_prefix": "lk_ab123",
+    "project": "Checkout Production",
+    "request_body": {},
+    "response_body": {}
+  }
+}
+```
+
+The nested `log` object uses the same derivation rules as the list endpoint.
+
+### Heartbeat event
+
+When no new rows are available, the stream emits:
+
+```json
+{
+  "type": "heartbeat",
+  "timestamp": 1784918531123
+}
+```
+
+The heartbeat timestamp is Unix time in milliseconds.
+
+If the polling loop catches an internal exception, the current implementation can emit a heartbeat-shaped payload with an additional `detail` field:
+
+```json
+{
+  "type": "heartbeat",
+  "timestamp": 1784918531123,
+  "detail": "STREAM_ERROR_DETAIL"
+}
+```
+
+Clients should tolerate additional fields and should not treat every heartbeat as a log record.
+
+### Ordering and polling
+
+The stream:
+
+1. reads only events for the selected project;
+2. orders rows by timestamp and event identifier in ascending order;
+3. emits batches of up to 100 rows;
+4. remembers the last timestamp and identifier;
+5. continues from rows strictly after that position;
+6. polls approximately once per second;
+7. emits a heartbeat when no rows are available.
+
+A new connection begins without a saved cursor. The current implementation can therefore emit existing project events before reaching newly ingested events.
+
+Client-side reconnects do not provide a server-side resume token. Consumers should deduplicate by the nested log `id` when reconnection could repeat records.
+
+### Stream response headers
+
+The runtime sets:
+
+```text
+Cache-Control: no-cache
+Connection: keep-alive
+X-Accel-Buffering: no
+```
+
+These headers reduce caching and intermediary buffering for the live stream.
+
+## Fetch streaming example
+
+Use a streaming `fetch` client when custom Bearer headers are required:
+
+```ts
+type LogStreamMessage =
+  | {
+      type: "log"
+      log: {
+        id: string
+        timestamp: string
+        method: string
+        endpoint: string
+        status: number
+      }
+    }
+  | {
+      type: "heartbeat"
+      timestamp: number
+      detail?: string
+    }
+
+export async function streamLogs(
+  apiBaseUrl: string,
+  projectId: string,
+  accessToken: string,
+  onMessage: (message: LogStreamMessage) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const url = new URL("/v1/logs/stream", apiBaseUrl)
+  url.searchParams.set("project_id", projectId)
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "text/event-stream",
+    },
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Log stream failed with HTTP ${response.status}`)
+  }
+
+  const reader = response.body
+    .pipeThrough(new TextDecoderStream())
+    .getReader()
+
+  let buffer = ""
+
+  while (true) {
+    const { value, done } = await reader.read()
+
+    if (done) {
+      return
+    }
+
+    buffer += value
+
+    const frames = buffer.split("\n\n")
+    buffer = frames.pop() ?? ""
+
+    for (const frame of frames) {
+      const data = frame
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n")
+
+      if (!data) {
+        continue
+      }
+
+      onMessage(JSON.parse(data) as LogStreamMessage)
+    }
+  }
+}
+```
+
+Production clients should add bounded reconnect backoff, cancellation, deduplication, and token-refresh handling.
+
+## Rate limits
+
+Both Logs endpoints match the current `logs` middleware policy:
+
+| Window | IP limit | Credential limit | Bucket scope |
+| --- | ---: | ---: | --- |
+| 60 seconds | 10 | 20 | Credential, with IP fallback |
+
+Relevant response headers include:
+
+```text
+X-RateLimit-Policy
+X-RateLimit-Limit
+X-RateLimit-Remaining
+X-RateLimit-Reset
+Retry-After
+```
+
+A blocked request returns HTTP `429` with:
+
+```json
+{
+  "detail": "Rate limit exceeded"
+}
+```
+
+Use the returned headers as authoritative because runtime policy can change.
+
+## Errors
+
+The OpenAPI snapshot explicitly lists `200` and validation error `422` responses for both endpoints. Runtime access and middleware controls can also produce other statuses.
+
+| Status | Typical meaning |
+| --- | --- |
+| `401` | Missing, invalid, or expired Bearer authentication |
+| `403` | User is not an authoritative member of the project’s organization |
+| `404` | Project does not exist |
+| `422` | Invalid UUID, unsupported range, or invalid query constraint |
+| `429` | Logs rate limit exceeded |
+
+Examples:
+
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+```json
+{
+  "detail": "Not a project member"
+}
+```
+
+```json
+{
+  "detail": "Project not found"
+}
+```
+
+Validation errors can use FastAPI’s validation array rather than a string detail.
+
+## Operational guidance
+
+1. use the smallest practical `range` and `limit`;
+2. use `hide_noise=true` when `/health` and `/favicon.ico` are irrelevant;
+3. remember that `query` does not inspect every nested body field;
+4. treat derived status and latency as projections unless explicit source metadata exists;
+5. do not store plaintext credentials or sensitive payloads in event properties;
+6. deduplicate stream records by log `id`;
+7. reconnect streams with bounded exponential backoff and jitter;
+8. refresh Bearer tokens deliberately rather than opening uncontrolled parallel streams;
+9. respect rate-limit headers;
+10. close streams when the operational view is no longer active.
+
+## Related documentation
+
+- [API Reference Overview](/reference/overview)
+- [Events API](/reference/events)
+- [Event Ingestion](/guides/event-ingestion)
+- [Organizations and Projects](/concepts/orgs-projects)
+- [Authentication](/authentication)
+- [Errors](/concepts/errors)
+- [Rate Limits](/concepts/rate-limits)
+- [Usage API](/reference/usage)

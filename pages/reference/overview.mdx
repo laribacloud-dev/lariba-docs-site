@@ -1,0 +1,420 @@
+# API Reference Overview
+
+The Lariba Cloud API is the HTTP interface for authentication, organizations, projects, event ingestion, operational evidence, Delivery, alerts, storage, billing, and platform administration.
+
+The current OpenAPI snapshot identifies the service as:
+
+| Field | Value |
+| --- | --- |
+| Title | `Lariba Cloud API` |
+| Version | `1.0.0` |
+| Description | `Lariba Cloud developer infrastructure platform` |
+| Operations | `222` |
+
+The API is versioned primarily under `/v1`.
+
+## Base URL
+
+The current OpenAPI snapshot does not define a `servers` array. Configure the API origin for each environment instead of deriving it from the schema.
+
+Use an environment variable:
+
+```bash
+export LARIBA_API_BASE_URL="https://YOUR_API_ORIGIN"
+```
+
+Build requests by combining the origin with the documented path:
+
+```bash
+curl --request GET   "${LARIBA_API_BASE_URL}/health"
+```
+
+For versioned routes:
+
+```bash
+curl --request GET   "${LARIBA_API_BASE_URL}/v1/projects"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+Do not append `/v1` to the environment variable itself unless your deployment is intentionally configured that way.
+
+## API versioning
+
+Most public application routes use the `/v1` prefix:
+
+```text
+/v1/auth
+/v1/organizations
+/v1/projects
+/v1/api-keys
+/v1/events
+/v1/delivery
+```
+
+The health endpoint is outside the versioned namespace:
+
+```text
+GET /health
+```
+
+Internal job routes can also exist outside `/v1`, but they are not part of the public OpenAPI contract and should not be called by ordinary client integrations.
+
+## Authentication models
+
+Lariba Cloud uses different authentication models for human users and machine integrations.
+
+### Human-user authentication
+
+Human-user APIs generally use Bearer access tokens:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+The OpenAPI security scheme is named `OAuth2PasswordBearer` and references:
+
+```text
+POST /v1/auth/login
+```
+
+A typical authenticated request:
+
+```bash
+curl --request GET   "${LARIBA_API_BASE_URL}/v1/account/me"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+The OpenAPI snapshot associates the Bearer scheme with 188 operations.
+
+### Machine authentication
+
+Project-scoped machine operations use API keys where documented:
+
+```text
+X-API-Key: YOUR_API_KEY
+```
+
+Example:
+
+```bash
+curl --request POST   "${LARIBA_API_BASE_URL}/v1/events/ingest"   --header "Content-Type: application/json"   --header "X-API-Key: $LARIBA_SOURCE_API_KEY"   --data '{
+    "event_type": "order.completed",
+    "source": "checkout-service"
+  }'
+```
+
+The current OpenAPI security-scheme section does not separately model `X-API-Key`, so endpoint documentation and runtime behaviour remain authoritative for machine authentication.
+
+### Unspecified OpenAPI security
+
+Some operations have no explicit OpenAPI security requirement.
+
+This does not prove that an operation is publicly callable. Authentication can be enforced through dependencies or runtime controls that are not fully represented in the generated security metadata.
+
+Use the endpoint-specific documentation and observed contract rather than inferring access from missing OpenAPI security declarations.
+
+## Resource hierarchy
+
+Most operational resources are scoped through organizations and projects:
+
+```text
+User
+└── Organization
+    └── Project
+        ├── Event Sources
+        ├── API Keys
+        ├── Events
+        ├── Delivery Channels and Attempts
+        ├── Alerts
+        ├── Storage Objects
+        ├── Secrets
+        └── Usage Data
+```
+
+Organization membership is authoritative for project access. Project identifiers preserve tenant and operational boundaries across API calls.
+
+## Endpoint families
+
+The current OpenAPI snapshot contains these principal API families.
+
+| Prefix | Operations | Primary responsibility |
+| --- | ---: | --- |
+| `/v1/projects` | 28 | Projects, members, capabilities, usage, and Source Intelligence |
+| `/v1/auth` | 25 | Login, registration, refresh, OAuth, passkeys, MFA, and password recovery |
+| `/v1/alerts` | 23 | Alerts, alert events, dashboards, destinations, and replay |
+| `/v1/ingest-sources` | 22 | Event Sources, source keys, connectors, schedules, and source intelligence |
+| `/v1/account` | 18 | Profile, avatar, password, passkeys, 2FA, and trusted devices |
+| `/v1/delivery` | 17 | Channels, protected headers, attempts, replay, retry, DLQ, and audits |
+| `/v1/organizations` | 13 | Organizations, members, invitations, and invitation audits |
+| `/v1/core` | 11 | Core Storage upload, multipart, download, completion, and guardrails |
+| `/v1/alert-destinations` | 7 | Alert destination lifecycle and testing |
+| `/v1/alert-rules` | 7 | Alert rule lifecycle, evaluation, and destination assignment |
+| `/v1/api-keys` | 6 | Project API-key creation, bootstrap, inspection, and revocation |
+| `/v1/billing` | 6 | Billing status, checkout, portal, sync, and organization billing controls |
+| `/v1/events` | 6 | Event ingestion, queries, counts, names, and streaming |
+| `/v1/sentinel` | 6 | Automation previews, approval, policy checks, and rule evaluations |
+| `/v1/performance` | 5 | Performance summary, latency, throughput, heatmap, and slow endpoints |
+| `/v1/analytics` | 4 | Event analytics, summaries, timeseries, and top events |
+| `/v1/secrets` | 4 | Project secret creation, activity, listing, and revocation |
+| `/v1/eql` | 2 | Event query language execution and timeseries |
+| `/v1/logs` | 2 | Log queries and streaming |
+| `/v1/usage` | 2 | Usage totals and current-period usage |
+
+Smaller public groups include configuration, onboarding, current-user organization discovery, worker health, search, and the Stripe webhook.
+
+## HTTP methods
+
+The snapshot contains:
+
+| Method | Operations | Typical use |
+| --- | ---: | --- |
+| `GET` | 87 | Read resources, dashboards, evidence, metrics, and streams |
+| `POST` | 101 | Create resources, execute actions, ingest events, and start workflows |
+| `PATCH` | 16 | Apply partial updates |
+| `PUT` | 4 | Replace or upsert complete configuration |
+| `DELETE` | 14 | Remove or revoke resources where permitted |
+
+A `POST` does not always mean resource creation. It can represent an operational action such as replay, retry, test, rotate, approve, revoke, or select.
+
+## Core workflow
+
+A typical Lariba Cloud integration follows this sequence:
+
+1. authenticate a human user;
+2. create or select an organization;
+3. create or select a project;
+4. create an Event Source or project API key;
+5. ingest events;
+6. inspect events, logs, analytics, and operational evidence;
+7. configure Delivery or alerting;
+8. monitor usage, rate limits, and billing.
+
+## Events
+
+The Events family supports:
+
+```text
+GET  /v1/events
+POST /v1/events
+GET  /v1/events/counts
+POST /v1/events/ingest
+GET  /v1/events/names
+GET  /v1/events/stream
+```
+
+Use `POST /v1/events/ingest` for project-scoped machine ingestion with `X-API-Key`.
+
+Use the query and streaming operations for authenticated investigation and operational interfaces where permitted.
+
+## Organizations and projects
+
+Organization operations cover:
+
+- creation and listing;
+- membership inspection and administration;
+- invitation creation, resend, revoke, accept, and decline;
+- invitation audit evidence.
+
+Project operations cover:
+
+- creation and selection;
+- project capabilities;
+- dashboards and events;
+- project members;
+- daily usage;
+- Source Intelligence resources.
+
+See the dedicated Projects reference for request and response contracts.
+
+## Event Sources
+
+Event Sources represent controlled ingestion identities and connector configuration.
+
+The `/v1/ingest-sources` family includes:
+
+- source lifecycle operations;
+- source activity;
+- API connector configuration, tests, runs, and schedules;
+- browser-safe keys;
+- key rotation;
+- source test events;
+- source intelligence snapshots.
+
+API keys returned during source creation or rotation are sensitive and should be stored immediately in a secret manager.
+
+## Delivery
+
+The Delivery API controls webhook channels and delivery evidence.
+
+It includes:
+
+- channel creation and configuration;
+- protected header write, rotate, and remove operations;
+- channel tests;
+- delivery history;
+- attempt details;
+- replay readiness and replay;
+- immediate retry readiness and execution;
+- DLQ-drain readiness and execution;
+- retry audits.
+
+Backend RBAC and project capability checks remain authoritative for every Delivery action.
+
+## Alerts and Sentinel
+
+Alert APIs include rule lifecycle, events, destinations, delivery evidence, dashboards, and alert replay.
+
+Sentinel APIs expose controlled automation workflows including:
+
+- previews;
+- policy checks;
+- approval;
+- audit evidence;
+- rule evaluations.
+
+Treat preview and approval operations as governed operational actions, not ordinary CRUD updates.
+
+## Core Storage
+
+Core Storage supports:
+
+- direct upload URLs;
+- multipart upload initiation;
+- multipart part URLs;
+- multipart completion and abort;
+- object completion;
+- object listing and retrieval;
+- download URLs;
+- object deletion;
+- billing guardrails.
+
+Use the returned storage and upload contracts rather than uploading object bytes directly to arbitrary API routes.
+
+## Streaming endpoints
+
+The current API includes streaming surfaces such as:
+
+```text
+GET /v1/events/stream
+GET /v1/logs/stream
+GET /v1/alerts/events/stream
+```
+
+Streaming clients should:
+
+- authenticate before opening the connection;
+- reconnect with bounded backoff;
+- handle network interruption;
+- avoid creating uncontrolled reconnect loops;
+- preserve the intended project scope.
+
+## Request format
+
+JSON is the primary request format for application operations:
+
+```text
+Content-Type: application/json
+```
+
+Example:
+
+```bash
+curl --request POST   "${LARIBA_API_BASE_URL}/v1/projects/select"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --header "Content-Type: application/json"   --data '{
+    "project_id": "PROJECT_UUID"
+  }'
+```
+
+File and storage operations can use upload-specific contracts, signed URLs, or multipart workflows instead of ordinary JSON body transfer.
+
+## Identifiers and timestamps
+
+Resource identifiers are commonly UUID values.
+
+Examples in documentation use placeholders:
+
+```text
+ORGANIZATION_UUID
+PROJECT_UUID
+SOURCE_UUID
+DELIVERY_ATTEMPT_UUID
+```
+
+Timestamps use ISO 8601 date-time strings unless an endpoint explicitly documents another representation.
+
+## Errors
+
+Most failures return an HTTP status code and a JSON body with a top-level `detail` field.
+
+The field can be:
+
+- a string;
+- a structured object;
+- a validation array.
+
+Example:
+
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+Request validation commonly returns HTTP `422`. Authorization, conflicts, rate limits, subsystem availability, and upstream failures use other status codes as documented.
+
+See the Errors concept for the complete client-handling model.
+
+## Rate limits
+
+Selected API routes are protected by named sliding-window policies.
+
+Relevant headers include:
+
+```text
+Retry-After
+X-RateLimit-Policy
+X-RateLimit-Limit
+X-RateLimit-Remaining
+X-RateLimit-Reset
+```
+
+The current OpenAPI snapshot does not explicitly enumerate middleware-generated HTTP `429` responses or these headers. Runtime responses are authoritative.
+
+## OpenAPI scope and limitations
+
+The generated OpenAPI snapshot is a major contract source, but it does not express every runtime rule.
+
+Current limitations include:
+
+- no declared `servers` array;
+- no global security requirement;
+- only the Bearer OAuth2 scheme is represented;
+- machine `X-API-Key` authentication is not separately declared;
+- middleware-generated rate-limit responses and headers are not enumerated;
+- internal routes excluded from the schema remain outside the public contract;
+- RBAC, tenancy, billing, and workflow-state rules can be enforced beyond schema metadata.
+
+Use this documentation together with endpoint-specific request and response models.
+
+## Security practices
+
+1. keep access tokens and API keys out of source control;
+2. never expose server API keys in browser code;
+3. store returned plaintext keys immediately;
+4. scope every request to the intended organization and project;
+5. use the minimum required role and API-key scope;
+6. preserve idempotency keys for safe write retries;
+7. redact tokens, secrets, protected headers, and sensitive payloads from logs;
+8. respect rate-limit and billing response metadata;
+9. treat client-side capability metadata as guidance, not authorization;
+10. rely on backend enforcement for tenant isolation.
+
+## Related documentation
+
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Organizations and Projects](/concepts/orgs-projects)
+- [Projects API](/reference/projects)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
+- [Errors](/concepts/errors)
+- [Rate Limits](/concepts/rate-limits)
+- [Logs API](/reference/logs)
+- [Usage API](/reference/usage)

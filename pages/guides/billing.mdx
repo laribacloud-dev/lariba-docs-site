@@ -1,0 +1,903 @@
+# Billing Guide
+
+Lariba Cloud billing combines organization plans, Stripe subscription flows, monthly usage reporting, ingestion enforcement, and platform administration.
+
+The public billing surface currently includes:
+
+```text
+GET   /v1/billing/status
+POST  /v1/billing/checkout-session
+POST  /v1/billing/account/checkout-session
+POST  /v1/billing/account/checkout-session/sync
+POST  /v1/billing/portal
+PATCH /v1/billing/org/{organization_id}
+POST  /v1/stripe/webhook
+```
+
+These routes do not all serve the same audience.
+
+| Route | Purpose | Primary caller |
+| --- | --- | --- |
+| `GET /v1/billing/status` | Read current-month billing and event-quota status | Organization member or machine integration |
+| `POST /v1/billing/checkout-session` | Start an organization subscription checkout | Organization admin |
+| `POST /v1/billing/account/checkout-session` | Start checkout before the first workspace exists | Authenticated user without a workspace |
+| `POST /v1/billing/account/checkout-session/sync` | Synchronize completed pre-workspace checkout | Authenticated user without a workspace |
+| `POST /v1/billing/portal` | Open Stripe Billing Portal | Organization admin |
+| `PATCH /v1/billing/org/{organization_id}` | Apply controlled billing administration | Enabled Lariba Cloud platform administrator |
+| `POST /v1/stripe/webhook` | Receive signed Stripe lifecycle events | Stripe |
+
+## Plan identifiers
+
+The API plan enum is:
+
+```text
+free
+pro
+scale
+enterprise
+```
+
+The code accepts `business` as an internal normalization alias for `scale`. Core Storage presents the `scale` tier with the customer-facing label `Business`.
+
+Client integrations should send the API enum value:
+
+```json
+{
+  "plan": "scale"
+}
+```
+
+Do not send `business` where an OpenAPI request requires the `Plan` enum.
+
+## Current plan configuration
+
+The following values are runtime configuration defaults, not a public price list.
+
+| API plan | Monthly events | Daily event safety limit | Retention configuration | Organizations | Projects per organization | Sources per project |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `free` | 10,000 | 10,000 | 30 days | 1 | 1 | 1 |
+| `pro` | 100,000 | None | 90 days | 3 | Unlimited | 3 |
+| `scale` | 1,000,000 | None | 180 days | Unlimited | Unlimited | Unlimited |
+| `enterprise` | Unlimited | None | Custom or unlimited | Unlimited | Unlimited | Unlimited |
+
+The retention configuration is currently a source of truth for future policy and is not yet enforced as a general retention deletion mechanism.
+
+### Core Storage defaults
+
+| API plan | Storage quota | Download bandwidth | Maximum file size |
+| --- | ---: | ---: | ---: |
+| `free` | 10 GB | 20 GB | 500 MB |
+| `pro` | 250 GB | 250 GB | 1 GB |
+| `scale` | 1 TB | 500 GB | 5 GB |
+| `enterprise` | Deployment-specific | Deployment-specific | Deployment-specific |
+
+Enterprise storage values are resolved from deployment configuration.
+
+### Limit precedence
+
+The effective monthly event limit uses this order:
+
+1. `organization.events_per_month_limit`, when explicitly set;
+2. the plan default;
+3. `None` when the resolved plan is unlimited.
+
+An explicit override of `0` means no monthly event allowance. It does not mean unlimited.
+
+### Commercial pricing
+
+The backend maps paid plans to configured Stripe Price IDs. It does not expose subscription amounts through the billing API contract.
+
+Internal overage values in plan configuration are marked as placeholders for estimates. Stripe remains the billing system of record.
+
+Do not present those placeholder values as public pricing.
+
+## Authentication models
+
+### Bearer access token
+
+Customer-facing billing actions use a human-user Bearer token:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+Bearer authentication is required for:
+
+```text
+POST  /v1/billing/checkout-session
+POST  /v1/billing/account/checkout-session
+POST  /v1/billing/account/checkout-session/sync
+POST  /v1/billing/portal
+PATCH /v1/billing/org/{organization_id}
+```
+
+The final route also requires platform-administrator authorization and feature enablement.
+
+### API key
+
+Billing status can be resolved through a project API key:
+
+```text
+X-API-Key: YOUR_API_KEY
+```
+
+The runtime accepts an API key that passes the event read-or-write scope check. The organization is derived from the API key’s project.
+
+### Billing-status OpenAPI distinction
+
+The OpenAPI operation for `GET /v1/billing/status` is associated with the Bearer scheme and also describes an optional `X-API-Key` header.
+
+Runtime behaviour supports either:
+
+- a Bearer token with `organization_id`; or
+- an accepted project API key without `organization_id`.
+
+Follow the runtime selection rules below rather than treating the OpenAPI Bearer declaration as the only valid mode.
+
+## Read billing status
+
+```text
+GET /v1/billing/status
+```
+
+This endpoint returns organization-level billing status and current UTC-month event usage.
+
+### Bearer-authenticated request
+
+A human-user request must include `organization_id`:
+
+```bash
+curl --silent --show-error   --get   "${LARIBA_API_BASE_URL}/v1/billing/status"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --data-urlencode "organization_id=$LARIBA_ORGANIZATION_ID"
+```
+
+The user must have authoritative access to the organization.
+
+A Bearer-authenticated request without `organization_id` returns:
+
+```json
+{
+  "detail": "organization_id is required for user-authenticated billing status requests"
+}
+```
+
+### API-key-authenticated request
+
+An API-key request derives the organization from the key’s project:
+
+```bash
+curl --silent --show-error   --request GET   "${LARIBA_API_BASE_URL}/v1/billing/status"   --header "X-API-Key: $LARIBA_API_KEY"
+```
+
+Do not send an organization identifier to redirect an API key to an unrelated tenant.
+
+### Status response
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "plan": "pro",
+  "billing_status": "active",
+  "month": "2026-07",
+  "from_day": "2026-07-01",
+  "to_day": "2026-08-01",
+  "reset_day": "2026-08-01",
+  "events_used": 8240,
+  "events_limit": 100000,
+  "events_remaining": 91760,
+  "is_near_limit": false,
+  "upgrade_url": "https://YOUR_UPGRADE_DESTINATION",
+  "is_blocked": false,
+  "block_reason": null,
+  "recommended_action": "none"
+}
+```
+
+### Response fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `organization_id` | String | Resolved organization |
+| `plan` | String | API plan identifier |
+| `billing_status` | String | Stored organization billing state |
+| `month` | String | Current UTC month in `YYYY-MM` form |
+| `from_day` | Date | First day of the current UTC month |
+| `to_day` | Date | First day of the following UTC month |
+| `reset_day` | Date | Current event-usage reset boundary |
+| `events_used` | Integer | Metered events across organization projects |
+| `events_limit` | Integer or null | Effective monthly event limit |
+| `events_remaining` | Integer or null | Non-negative remaining allowance |
+| `is_near_limit` | Boolean | Usage is at least 80% and below the limit |
+| `upgrade_url` | String | Configured upgrade destination |
+| `is_blocked` | Boolean | Current ingestion decision is blocked |
+| `block_reason` | String or null | Machine-readable billing or quota reason |
+| `recommended_action` | String | Current remediation classification |
+
+### Usage aggregation
+
+The endpoint sums `usage_daily.events_ingested` across every project in the organization.
+
+The time window is:
+
+```text
+day >= first day of current UTC month
+day < first day of next UTC month
+```
+
+It does not count only the project attached to the requesting API key.
+
+### Near-limit threshold
+
+For a positive finite event limit:
+
+```text
+events_used >= 80% of events_limit
+events_used < events_limit
+```
+
+produces:
+
+```json
+{
+  "is_near_limit": true
+}
+```
+
+At or above the limit, the result is no longer merely near the limit; the ingestion decision can be blocked.
+
+### Recommended actions
+
+The current mapping is:
+
+| Block reason | Recommended action |
+| --- | --- |
+| `billing_inactive` | `upgrade` |
+| `limit_exceeded` | `upgrade` |
+| `blocked` | `contact_support` |
+| No mapped reason | `none` |
+
+Treat `block_reason` as the primary machine-readable explanation.
+
+## Organization checkout
+
+```text
+POST /v1/billing/checkout-session
+```
+
+This route starts a Stripe subscription checkout for an existing organization.
+
+### Access requirement
+
+The caller must be an organization admin or owner under the organization authorization model.
+
+An ordinary organization member cannot create a checkout session.
+
+### Request
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "plan": "pro",
+  "currency": "eur"
+}
+```
+
+| Field | Required | Values |
+| --- | --- | --- |
+| `organization_id` | Yes | Accessible organization UUID |
+| `plan` | Yes | `free`, `pro`, `scale`, or `enterprise` |
+| `currency` | No | `usd`, `eur`, or null |
+
+The `free` plan does not require Stripe Checkout and returns HTTP `422`.
+
+Currency acceptance does not guarantee that every plan has a separately configured Stripe price in every currency. Deployment price mapping remains authoritative.
+
+### Example request
+
+```bash
+curl --silent --show-error   --request POST   "${LARIBA_API_BASE_URL}/v1/billing/checkout-session"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --header "Content-Type: application/json"   --data '{
+    "organization_id": "ORGANIZATION_UUID",
+    "plan": "pro",
+    "currency": "eur"
+  }'
+```
+
+### Response
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "plan": "pro",
+  "checkout_session_id": "CHECKOUT_SESSION_ID",
+  "checkout_url": "https://checkout.stripe.com/..."
+}
+```
+
+Redirect the user to `checkout_url`. Do not expose the Stripe secret key or configured Price IDs to the browser.
+
+### Checkout behaviour
+
+The server:
+
+1. verifies organization-admin access;
+2. rejects `free`;
+3. resolves the configured Stripe Price ID;
+4. uses server-configured success and cancellation URLs;
+5. creates a Stripe customer when the organization has none;
+6. recreates a Stripe customer when the stored customer no longer exists;
+7. creates a subscription-mode Checkout Session;
+8. returns the session identifier and URL.
+
+The organization checkout endpoint does not accept client-supplied success and cancellation URLs.
+
+## Pre-workspace checkout
+
+Pre-workspace checkout allows an authenticated user to choose a paid plan before creating the first organization.
+
+```text
+POST /v1/billing/account/checkout-session
+```
+
+### Eligibility
+
+The user must not already own or belong to an organization.
+
+Otherwise the route returns HTTP `409`:
+
+```json
+{
+  "detail": "Pre-checkout is only available before creating your first workspace"
+}
+```
+
+### Request
+
+```json
+{
+  "plan": "pro",
+  "success_url": "https://app.example.com/onboarding/billing/success",
+  "cancel_url": "https://app.example.com/onboarding/billing",
+  "currency": "eur"
+}
+```
+
+| Field | Required | Constraints |
+| --- | --- | --- |
+| `plan` | Yes | Paid `Plan` enum value |
+| `success_url` | Yes | Valid non-empty URI |
+| `cancel_url` | Yes | Valid non-empty URI |
+| `currency` | No | `usd`, `eur`, or null |
+
+Unlike organization checkout, this route accepts the success and cancellation URLs in the request.
+
+### Response
+
+```json
+{
+  "plan": "pro",
+  "checkout_session_id": "CHECKOUT_SESSION_ID",
+  "checkout_url": "https://checkout.stripe.com/..."
+}
+```
+
+The server associates checkout metadata with the authenticated user and marks the billing scope as pre-workspace.
+
+## Synchronize pre-workspace checkout
+
+After Stripe returns the user to the application, synchronize the session:
+
+```text
+POST /v1/billing/account/checkout-session/sync
+```
+
+### Request
+
+```json
+{
+  "checkout_session_id": "CHECKOUT_SESSION_ID"
+}
+```
+
+The identifier must contain between 1 and 255 characters.
+
+### Example request
+
+```bash
+curl --silent --show-error   --request POST   "${LARIBA_API_BASE_URL}/v1/billing/account/checkout-session/sync"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --header "Content-Type: application/json"   --data '{
+    "checkout_session_id": "CHECKOUT_SESSION_ID"
+  }'
+```
+
+### Synchronization checks
+
+The server:
+
+1. verifies that the user still has no workspace;
+2. retrieves the Checkout Session from Stripe;
+3. verifies session ownership when user metadata or the client reference is present;
+4. requires the Checkout Session status to be `complete`;
+5. resolves the Stripe subscription and plan;
+6. stores pending subscription state on the user;
+7. reports workspace readiness.
+
+A session associated with another user returns HTTP `403`:
+
+```json
+{
+  "detail": "Checkout session does not belong to this user"
+}
+```
+
+An incomplete session returns HTTP `409`:
+
+```json
+{
+  "detail": "Checkout session is not complete yet"
+}
+```
+
+### Response
+
+```json
+{
+  "plan": "pro",
+  "checkout_session_id": "CHECKOUT_SESSION_ID",
+  "ready_for_workspace": true,
+  "stripe_customer_id": "CUSTOMER_ID",
+  "stripe_subscription_id": "SUBSCRIPTION_ID",
+  "stripe_subscription_status": "active"
+}
+```
+
+The Stripe identifiers and status can be null when the upstream session does not supply them.
+
+### Claiming the subscription
+
+When the user subsequently creates the first organization, the pending workspace subscription can be transferred to that organization.
+
+The resulting organization receives the pending:
+
+- plan;
+- billing status;
+- Stripe customer identifier;
+- Stripe subscription identifier;
+- Stripe subscription status;
+- Stripe Price identifier.
+
+After a successful claim, the user’s pending workspace plan is cleared.
+
+## Billing Portal
+
+```text
+POST /v1/billing/portal
+```
+
+The Billing Portal route creates a Stripe-hosted management session for an organization.
+
+### Access requirement
+
+The caller must be an organization admin or owner.
+
+Runtime authorization tests confirm:
+
+- an outsider receives `Not an organization member`;
+- an ordinary member receives `Admin role required`;
+- an authorized admin receives a portal URL.
+
+### Request
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "return_url": "https://app.example.com/settings/billing"
+}
+```
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `organization_id` | Yes | Organization to manage |
+| `return_url` | No | URI used after leaving the Stripe portal |
+
+When `return_url` is omitted, the server uses the configured portal return URL.
+
+### Response
+
+```json
+{
+  "url": "https://billing.stripe.com/..."
+}
+```
+
+Redirect the user to the returned URL.
+
+## Ingestion billing enforcement
+
+Event ingestion requires an API key with `events:write` and passes through billing enforcement before the event is accepted.
+
+The current decision projects one additional request and one additional event:
+
+```text
+add_requests = 1
+add_events = 1
+```
+
+The enforcement layer distinguishes three primary block reasons.
+
+### Billing inactive
+
+HTTP `403`:
+
+```json
+{
+  "detail": "Organization billing is not active."
+}
+```
+
+Relevant headers:
+
+```text
+X-Lariba-Upgrade-URL
+X-Lariba-Billing-Status
+X-Lariba-Block-Reason: billing_inactive
+```
+
+### Monthly event limit exceeded
+
+HTTP `403`:
+
+```json
+{
+  "detail": "Monthly quota exceeded (events)"
+}
+```
+
+Relevant headers:
+
+```text
+X-Lariba-Upgrade-URL
+X-Lariba-Block-Reason: limit_exceeded
+X-Lariba-Monthly-Limit
+X-Lariba-Monthly-Used
+X-Lariba-Period-Start
+X-Lariba-Period-End
+```
+
+### Monthly request limit exceeded
+
+HTTP `403`:
+
+```json
+{
+  "detail": "Monthly request quota exceeded."
+}
+```
+
+Relevant headers:
+
+```text
+X-Lariba-Upgrade-URL
+X-Lariba-Block-Reason: request_limit_exceeded
+X-Lariba-Monthly-Request-Limit
+X-Lariba-Monthly-Requests-Used
+X-Lariba-Period-Start
+X-Lariba-Period-End
+```
+
+A deployment can expose a custom message for request-limit exhaustion.
+
+### Unknown billing block
+
+The fallback response is HTTP `403`:
+
+```json
+{
+  "detail": "Blocked by billing enforcement."
+}
+```
+
+and includes the returned block reason.
+
+### Browser header access
+
+The server returns billing and quota headers with enforcement responses.
+
+Browser applications can read only response headers exposed by the deployment’s CORS configuration. Do not assume every operational header is browser-readable without verifying the active CORS policy.
+
+### Source telemetry
+
+When billing enforcement blocks ingestion, Lariba Cloud attempts to record a source-ingestion failure against the API key.
+
+A telemetry-write failure is logged and rolled back without replacing the original billing decision.
+
+## Billing status versus enforcement
+
+`GET /v1/billing/status` is a reporting and decision-preview surface. The ingestion route remains authoritative for a specific attempted write.
+
+Clients should:
+
+1. use billing status to present plan and current-month usage;
+2. inspect `is_blocked` and `block_reason`;
+3. still handle HTTP `403` from ingestion;
+4. read the response headers from the rejected request;
+5. avoid treating a successful status read as a reservation of quota.
+
+Concurrent traffic can consume remaining capacity after a status read.
+
+## Daily limits and rate limits
+
+Billing limits are not the only controls that can reject ingestion.
+
+### Daily event safety limit
+
+A source-level daily event limit can return HTTP `429`:
+
+```json
+{
+  "detail": "Daily limit exceeded"
+}
+```
+
+### Sliding-window rate limit
+
+Middleware can also return HTTP `429`:
+
+```json
+{
+  "detail": "Rate limit exceeded"
+}
+```
+
+with `Retry-After` and `X-RateLimit-*` headers.
+
+### Monthly billing quota
+
+Monthly event or request quota enforcement returns HTTP `403`, not HTTP `429`.
+
+Clients must distinguish these responses by status, body, and headers.
+
+## Billing rate limits
+
+The current named policies are:
+
+| Policy | Matched route | Window | IP limit | Credential limit |
+| --- | --- | ---: | ---: | ---: |
+| `billing-status` | `GET /v1/billing/status` | 60 seconds | 20 | 60 |
+| `billing-admin` | `PATCH /v1/billing/org/` prefix | 300 seconds | 20 | 10 |
+| `billing-self-serve` | `POST /v1/billing/checkout-session` and `POST /v1/billing/portal` | 60 seconds | 20 | 30 |
+
+These policies use credential buckets with IP fallback.
+
+The named `billing-self-serve` rule does not currently list the two `/v1/billing/account/checkout-session` routes.
+
+That observation does not guarantee that pre-workspace checkout can never be protected by another runtime control.
+
+## Stripe webhook
+
+```text
+POST /v1/stripe/webhook
+```
+
+The webhook is not authenticated with a Bearer token or Lariba Cloud API key. Stripe signs the raw request body.
+
+### Runtime signature requirement
+
+The current OpenAPI schema marks `Stripe-Signature` as optional, but the runtime requires it.
+
+A missing header returns HTTP `400`:
+
+```json
+{
+  "detail": "Missing Stripe-Signature header"
+}
+```
+
+An invalid signature returns:
+
+```json
+{
+  "detail": "Invalid signature"
+}
+```
+
+Do not implement webhook verification from parsed JSON. Verification depends on the original raw request body.
+
+### Configuration requirements
+
+The webhook requires:
+
+```text
+STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET
+```
+
+Missing required server configuration returns HTTP `500`.
+
+### Idempotency
+
+Every accepted Stripe event is persisted with its unique Stripe event identifier before lifecycle processing.
+
+A duplicate identifier returns:
+
+```json
+{
+  "ok": true,
+  "duplicate": true
+}
+```
+
+This protects the system from applying the same Stripe retry more than once.
+
+### Handled lifecycle events
+
+The current webhook handles:
+
+```text
+checkout.session.completed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+```
+
+For organization subscriptions it can update:
+
+- Stripe customer identifier;
+- Stripe subscription identifier;
+- Stripe subscription status;
+- Stripe Price identifier;
+- mapped Lariba Cloud plan.
+
+For pre-workspace subscriptions it can update the authenticated user’s pending billing state.
+
+A deleted organization subscription sets the organization billing status to `canceled`. A deleted pre-workspace subscription clears the pending plan.
+
+Unhandled event types return a successful ignored result rather than failing the webhook.
+
+### Stored webhook evidence
+
+The Stripe event record includes:
+
+- unique Stripe event identifier;
+- event type;
+- live-mode indicator;
+- raw payload;
+- received timestamp;
+- optional organization association;
+- processing metadata fields.
+
+Restrict database and operational access to stored Stripe payloads because they can contain billing and customer metadata.
+
+### Usage-metering bypass
+
+The request-metering middleware explicitly bypasses `/v1/stripe/webhook`.
+
+This preserves raw-body signature verification and prevents Stripe webhook calls from being counted as API-key requests.
+
+## Platform billing administration
+
+```text
+PATCH /v1/billing/org/{organization_id}
+```
+
+This is a platform-administration route, not organization self-service.
+
+### Enablement and authorization
+
+The route requires:
+
+```text
+ENABLE_BILLING_ADMIN=true
+```
+
+When the feature is disabled, the route returns HTTP `404`.
+
+The authenticated user must appear in the configured platform-admin email set. A non-platform administrator receives HTTP `403`.
+
+A missing or invalid platform-admin configuration produces HTTP `500`.
+
+### Request
+
+```json
+{
+  "plan": "pro",
+  "billing_status": "active",
+  "events_per_month_limit": 125000
+}
+```
+
+All fields are optional.
+
+| Field | Type | Behaviour |
+| --- | --- | --- |
+| `plan` | Plan or null | Updates the organization plan |
+| `billing_status` | String or null | Route validation accepts `active`, `blocked`, or `suspended` |
+| `events_per_month_limit` | Integer or null | Sets or clears the explicit monthly event override |
+
+When supplied as an integer, `events_per_month_limit` must be zero or greater.
+
+### Response
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "plan": "pro",
+  "billing_status": "active",
+  "events_per_month_limit": 125000
+}
+```
+
+Successful updates emit a billing administration audit event.
+
+This route should be restricted at the network, identity, and application layers.
+
+## Runtime configuration
+
+Relevant deployment variables include:
+
+```text
+ENABLE_STRIPE_BILLING
+ENABLE_STRIPE_WEBHOOKS
+STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET
+STRIPE_PRICE_ID_PRO
+STRIPE_PRICE_ID_PRO_EUR
+STRIPE_PRICE_ID_SCALE
+STRIPE_PRICE_ID_ENTERPRISE
+STRIPE_SUCCESS_URL
+STRIPE_CANCEL_URL
+STRIPE_PORTAL_RETURN_URL
+UPGRADE_URL
+ENABLE_BILLING_ADMIN
+LARIBA_PLATFORM_ADMIN_EMAILS
+CORE_STORAGE_METERED_BILLING_ENABLED
+```
+
+Some deployments also accept legacy Stripe Price variable names during webhook plan mapping.
+
+Never expose secret values, webhook secrets, or Stripe secret keys through frontend environment variables, logs, documentation examples, or client responses.
+
+## Common error statuses
+
+The generated OpenAPI operations primarily list HTTP `200` and validation `422`. Runtime billing behaviour includes additional statuses.
+
+| Status | Typical meaning |
+| --- | --- |
+| `400` | Missing organization context, missing webhook signature, malformed Stripe event, or invalid Stripe mapping input |
+| `401` | Missing or invalid human/API-key authentication |
+| `403` | Organization access denied, admin role required, checkout ownership mismatch, or ingestion billing gate |
+| `404` | Organization not found or platform billing administration disabled |
+| `409` | Pre-workspace checkout is unavailable or checkout is not complete |
+| `422` | Request validation failed, free checkout requested, or invalid administrative billing state |
+| `429` | A named sliding-window or daily event limit was reached |
+| `500` | Billing, Stripe, or platform-admin configuration failure |
+| `502` | Stripe API operation failed |
+
+Use the structured FastAPI validation array for schema-level HTTP `422` failures.
+
+## Client integration checklist
+
+1. use Bearer authentication for customer billing actions;
+2. require organization-admin capability before displaying checkout or portal actions;
+3. send API enum plan values, including `scale` rather than `business`;
+4. keep Stripe Price IDs and secret keys server-side;
+5. redirect only to the server-returned Stripe URL;
+6. synchronize pre-workspace checkout before creating the first organization;
+7. verify that a synchronized session belongs to the current user;
+8. read billing status for current-month context;
+9. handle ingestion HTTP `403` as the authoritative quota decision;
+10. distinguish monthly quota `403` from rate-limit and daily-limit `429`;
+11. respect `Retry-After` for middleware rate limits;
+12. do not treat placeholder overage configuration as public pricing;
+13. preserve Stripe webhook raw-body verification;
+14. make webhook processing idempotent by Stripe event identifier;
+15. never log access tokens, API keys, webhook secrets, or Stripe secret keys.
+
+## Related documentation
+
+- [Usage API](/reference/usage)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
+- [Organizations and Projects](/concepts/orgs-projects)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Errors](/concepts/errors)
+- [Rate Limits](/concepts/rate-limits)
+- [API Reference Overview](/reference/overview)

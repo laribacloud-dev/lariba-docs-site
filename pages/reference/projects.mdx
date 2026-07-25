@@ -1,0 +1,325 @@
+# Projects
+
+Organizations and projects provide the workspace, tenancy, and authorization model for Lariba Cloud.
+
+The examples on this page use human-user Bearer authentication:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+## Organization endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/organizations` | List organizations available to the current user |
+| `POST` | `/v1/organizations` | Create an organization |
+| `GET` | `/v1/organizations/{organization_id}` | Read one organization |
+| `GET` | `/v1/organizations/{organization_id}/members` | List organization members |
+| `PATCH` | `/v1/organizations/{organization_id}/members/{user_id}` | Update an organization member role |
+| `DELETE` | `/v1/organizations/{organization_id}/members/{user_id}` | Remove an organization member |
+| `GET` | `/v1/organizations/{organization_id}/invites` | List invitations |
+| `POST` | `/v1/organizations/{organization_id}/invites` | Create an invitation |
+| `GET` | `/v1/organizations/{organization_id}/invitation-audits` | List invitation audits |
+| `POST` | `/v1/organizations/invites/{invite_id}/resend` | Resend an invitation |
+| `POST` | `/v1/organizations/invites/{invite_id}/revoke` | Revoke an invitation |
+| `POST` | `/v1/organizations/invites/{invite_id}/accept` | Accept an invitation |
+| `POST` | `/v1/organizations/invites/{invite_id}/decline` | Decline an invitation |
+
+## Create an organization
+
+`POST /v1/organizations`
+
+```json
+{
+  "name": "Example Organization",
+  "slug": "example-organization"
+}
+```
+
+Request fields:
+
+| Field | Required | Constraints |
+| --- | --- | --- |
+| `name` | Yes | 1–200 characters |
+| `slug` | Yes | 1–200 characters |
+
+Successful response:
+
+```json
+{
+  "id": "ORGANIZATION_UUID",
+  "name": "Example Organization",
+  "slug": "example-organization",
+  "owner_id": "USER_UUID",
+  "created_at": "2026-07-24T00:00:00+00:00"
+}
+```
+
+The authenticated creator becomes the organization owner.
+
+## Organization members
+
+Organization member responses include:
+
+| Field | Meaning |
+| --- | --- |
+| `organization_id` | Parent organization |
+| `user_id` | Member user |
+| `display_name` | Display name |
+| `identity` | Sanitized identity |
+| `role` | Effective organization role |
+| `status` | Current membership status |
+| `is_owner` | Whether the member is the organization owner |
+| `can_change_role` | Whether the role may be changed |
+| `can_revoke` | Whether the membership may be removed |
+| `created_at` | Membership creation time |
+
+Listing, updating, and removing organization members require owner-level organization authority.
+
+### Update an organization role
+
+`PATCH /v1/organizations/{organization_id}/members/{user_id}`
+
+```json
+{
+  "role": "operator"
+}
+```
+
+Allowed roles:
+
+- `admin`;
+- `operator`;
+- `member`;
+- `viewer`.
+
+The organization owner role is immutable. Attempting to change it returns a conflict response.
+
+### Remove an organization member
+
+`DELETE /v1/organizations/{organization_id}/members/{user_id}`
+
+Successful response:
+
+```json
+{
+  "message": "Organization membership removed"
+}
+```
+
+The organization owner cannot be removed through this endpoint.
+
+## Invitations
+
+### Create an invitation
+
+`POST /v1/organizations/{organization_id}/invites`
+
+```json
+{
+  "email": "operator@example.com",
+  "role": "operator"
+}
+```
+
+Request fields:
+
+| Field | Required | Behavior |
+| --- | --- | --- |
+| `email` | Yes | Target email address |
+| `role` | No | Defaults to `operator`; accepts `operator` or `viewer` |
+
+Owner invitation responses include the invitation identifier, organization identifier, sanitized target identity, requested role, status, timestamps, email-delivery result, and delivery status.
+
+### Accept an invitation
+
+`POST /v1/organizations/invites/{invite_id}/accept`
+
+The optional request body can contain an invitation token:
+
+```json
+{
+  "token": "INVITATION_TOKEN"
+}
+```
+
+The token, when supplied, must be 10–512 characters.
+
+### Invitation audits
+
+`GET /v1/organizations/{organization_id}/invitation-audits`
+
+Optional query parameter:
+
+| Parameter | Default | Purpose |
+| --- | ---: | --- |
+| `limit` | `50` | Maximum audit records returned |
+
+Audit responses include action, outcome, reason code, requested role, request identifier, invitation identifier, and creation time.
+
+## Project endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/projects` | List accessible projects |
+| `POST` | `/v1/projects` | Create a project |
+| `POST` | `/v1/projects/select` | Select a project |
+| `GET` | `/v1/projects/{project_id}` | Read one project |
+| `GET` | `/v1/projects/{project_id}/capabilities` | Read project capabilities |
+| `GET` | `/v1/projects/{project_id}/dashboard` | Read dashboard data |
+| `GET` | `/v1/projects/{project_id}/events` | List project events |
+| `GET` | `/v1/projects/{project_id}/members` | List project members |
+| `POST` | `/v1/projects/{project_id}/members` | Add a project member |
+| `GET` | `/v1/projects/{project_id}/members/me` | Read the current user’s membership |
+| `PATCH` | `/v1/projects/{project_id}/members/{user_id}` | Update a project member role |
+| `DELETE` | `/v1/projects/{project_id}/members/{user_id}` | Remove a project member |
+| `GET` | `/v1/projects/{project_id}/usage/daily` | Read daily usage |
+
+## Create a project
+
+`POST /v1/projects`
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "name": "Production",
+  "slug": "production"
+}
+```
+
+Request fields:
+
+| Field | Required | Constraints |
+| --- | --- | --- |
+| `organization_id` | Yes | UUID |
+| `name` | Yes | 1–200 characters |
+| `slug` | Yes | 1–200 characters |
+
+Successful response:
+
+```json
+{
+  "id": "PROJECT_UUID",
+  "organization_id": "ORGANIZATION_UUID",
+  "name": "Production",
+  "slug": "production",
+  "owner_id": "USER_UUID",
+  "created_at": "2026-07-24T00:00:00+00:00"
+}
+```
+
+## Select a project
+
+`POST /v1/projects/select`
+
+```json
+{
+  "project_id": "PROJECT_UUID"
+}
+```
+
+The response uses the standard project representation.
+
+## Project members
+
+### Add a member
+
+`POST /v1/projects/{project_id}/members`
+
+```json
+{
+  "user_id": "USER_UUID",
+  "role": "operator"
+}
+```
+
+`user_id` is required. `role` defaults to `member`.
+
+Allowed project roles:
+
+- `owner`;
+- `admin`;
+- `operator`;
+- `member`;
+- `viewer`.
+
+Project member responses contain:
+
+- `project_id`;
+- `user_id`;
+- `role`;
+- `created_at`.
+
+Organization membership remains authoritative for project access, and organization membership changes are synchronized to project memberships.
+
+## Project capabilities
+
+`GET /v1/projects/{project_id}/capabilities`
+
+```json
+{
+  "project_id": "PROJECT_UUID",
+  "can_read_delivery": true,
+  "can_replay_delivery": true,
+  "can_retry_now_delivery": true,
+  "can_drain_delivery_dlq": false,
+  "can_manage_delivery_channels": false
+}
+```
+
+Capability fields describe the current user’s effective Delivery permissions. Backend authorization remains authoritative.
+
+## Project events
+
+`GET /v1/projects/{project_id}/events`
+
+Supported query parameters:
+
+| Parameter | Default | Constraints |
+| --- | ---: | --- |
+| `limit` | `50` | 1–500 |
+| `offset` | `0` | Minimum `0` |
+| `event` | — | Event filter |
+| `source_id` | — | Event Source UUID |
+| `severity` | — | Severity filter |
+| `status` | — | Status filter |
+| `environment` | — | Environment filter |
+| `range` | — | Named time range |
+| `from_ts` | — | ISO 8601 date-time |
+| `to_ts` | — | ISO 8601 date-time |
+
+The response includes project identity, project name, total count, pagination values, effective time bounds, and event items.
+
+## Daily usage
+
+`GET /v1/projects/{project_id}/usage/daily`
+
+Query parameter:
+
+| Parameter | Default | Constraints |
+| --- | ---: | --- |
+| `days` | `30` | 1–365 |
+
+The response contains the project identifier and an array of daily usage items.
+
+## Common responses
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Request completed successfully |
+| `201` | Nested project resource created successfully |
+| `204` | Nested project resource deleted successfully |
+| `401` | Human authentication is missing or invalid |
+| `403` | The user is not authorized for the organization or project |
+| `404` | The requested organization, project, member, or invitation does not exist |
+| `409` | A protected ownership or membership rule prevents the change |
+| `422` | Request or parameter validation failed |
+
+## Related documentation
+
+- [Organizations and Projects concept](/concepts/orgs-projects)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Events API](/reference/events)
+- [Usage reference](/reference/usage)

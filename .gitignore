@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local scratch artifacts
+/lariba-app/
+/code
+/test-track.mjs
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

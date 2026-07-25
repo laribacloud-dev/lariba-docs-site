@@ -1,0 +1,455 @@
+# Changelog
+
+Lariba Cloud release history is split across documentation releases, platform capabilities, and production acceptance records.
+
+This page records the public milestones that are supported by repository history and acceptance evidence.
+
+## Versioning model
+
+Lariba Cloud uses several independent version lines:
+
+| Version line | Meaning |
+| --- | --- |
+| Docs `0.x` | Public documentation release |
+| API `1.0.0` | Current OpenAPI document version |
+| Delivery `1.x` | Delivery capability milestones |
+| SDK `1.0.0` | Version reported by the JavaScript SDK repository |
+| `v0.1.0-foundation` | Backend foundation checkpoint tag |
+
+These versions are not interchangeable.
+
+A documentation release does not automatically change the API version. An SDK package version does not by itself establish compatibility with the current API contract.
+
+## Unreleased — Docs 0.3
+
+Docs 0.3 is the current documentation synchronization release.
+
+### Added
+
+- A new documentation homepage that presents Lariba Cloud as an operational event control plane.
+- A canonical API reference overview covering authentication models, resource hierarchy, endpoint families, versioning, errors, rate limits, and OpenAPI boundaries.
+- Expanded project and organization documentation covering membership inheritance, invitations, roles, capabilities, and tenant isolation.
+- Complete API-key documentation for project keys, source-linked keys, browser-safe keys, scopes, lifecycle state, rotation, revocation, and credential handling.
+- A canonical Events API reference for `POST /v1/events/ingest`.
+- A production-oriented event-ingestion guide covering authentication, normalized payloads, idempotency, response semantics, and error handling.
+- A Logs API reference covering list queries, field derivation, Server-Sent Events, heartbeat events, ordering, and stream behaviour.
+- A Usage API reference covering project summaries, daily usage, organization usage, metering bypasses, reporting, and enforcement boundaries.
+- A Billing guide covering plan identifiers, usage aggregation, checkout, pre-workspace checkout, checkout synchronization, Billing Portal, quota enforcement, Stripe webhooks, and platform administration.
+- A Webhooks guide covering Delivery channels, protected headers, retry audits, readiness checks, replay, Retry Now, DLQ drain, alert destinations, signatures, and Stripe webhook boundaries.
+- Authentication documentation for registration, email verification, password login, refresh, logout, MFA, passkeys, TOTP, trusted devices, OAuth, and password reset.
+- Error and rate-limit concepts that distinguish validation, authorization, billing enforcement, daily limits, middleware rate limits, and retryable upstream failures.
+- Worker Health and Recovery operations documentation covering worker identity, persistent heartbeats, health classifications, critical component failure, recovery verification, and production acceptance.
+- SDK documentation that records the current JavaScript repository contract and its compatibility gaps.
+
+### Changed
+
+- Documentation now treats the HTTP API as the production integration contract while the JavaScript SDK remains in developer preview.
+- API examples use environment-provided API origins rather than deriving a production host from the OpenAPI document.
+- Event ingestion examples use the canonical `/v1/events/ingest` route.
+- Documentation separates Bearer-token authentication from project API-key authentication.
+- Billing quota failures are distinguished from request rate limits and daily ingestion limits.
+- Delivery recovery actions are documented as append-only operational evidence rather than mutation of the original failure.
+- Protected webhook values are documented as write-only, encrypted, masked, and excluded from audit evidence.
+- OpenAPI limitations and runtime-only behaviour are called out explicitly.
+
+### Operational scope
+
+Docs 0.3 includes the accepted Worker Heartbeat and Supervision v1 operating model and the accepted Delivery v1.9.2a control model.
+
+It does not claim that every repository-local SDK or every internal operation is a public, production-ready integration surface.
+
+## 2026-07-23 — Worker Heartbeat and Supervision v1
+
+**Production acceptance: accepted**
+
+The production acceptance gate for Worker Heartbeat and Supervision v1 was closed.
+
+### Added
+
+- Persistent worker heartbeat records.
+- Boot-unique worker identity.
+- Release-identifier attribution.
+- Alert-worker and Delivery-worker component status.
+- Last-success timestamps for supervised components.
+- Health classification for healthy, degraded, stale, stopped, and failed states.
+- An acceptance hook for production supervision verification.
+- A public operations guide for health interpretation and controlled recovery.
+
+### Security and operations
+
+- Worker-health authorization was isolated from ordinary project operations.
+- The frontend proxy contract was updated for the worker-health route.
+- Recovery guidance preserves Delivery and alert evidence while worker processes restart.
+
+## 2026-07-20 — Delivery v1.9.2a Phase 1
+
+**Production acceptance: accepted with documented limitations**
+
+Phase 1 closed the controlled production acceptance gate for Delivery v1.9.2a.
+
+### Accepted scope
+
+- Protected webhook credentials.
+- Versioned Delivery credential keyring.
+- Retry lineage and audit evidence.
+- Owner, Operator, and Viewer role enforcement.
+- Cross-tenant isolation.
+- Channel deletion protection when Delivery evidence exists.
+- Human actor attribution through `actor_user_id`.
+- Secret exclusion from audits and tracked-file scans.
+- Production worker attribution.
+- Controlled readiness results for replay, Retry Now, and DLQ drain.
+
+### Evidence model
+
+- Original failed attempts remain visible and unchanged.
+- Automatic retry records remain attached to the operational lineage.
+- Recovery actions append new attempts rather than rewriting the source failure.
+- Channels with retained Delivery evidence cannot be deleted and should be disabled instead.
+
+## 2026-07-16 — Delivery v1.9.2a credential keyring
+
+### Added
+
+- Versioned encryption-key selection for protected Delivery credentials.
+- Key-version persistence with protected-header records.
+- Runtime decryption through the recorded key version.
+- Isolated migration-test database handling for Delivery credential changes.
+
+### Changed
+
+- Protected credentials can remain decryptable during controlled key rotation when the required historical key version remains configured.
+
+## 2026-07-15 — Delivery v1.9.2 protected webhook credentials
+
+### Added
+
+- Write-only protected headers for Delivery channels.
+- Encryption before persistence.
+- Masked read responses.
+- Add, rotate, and remove operations.
+- Runtime resolution of protected values only when dispatching.
+- Credential-disclosure regression coverage.
+
+### Security
+
+- Protected values are excluded from ordinary API responses.
+- Public and protected header names cannot collide.
+- Viewer-facing controls are capability-gated.
+- Audit records preserve action evidence without storing secret values.
+
+## 2026-07-14 — Delivery v1.9.1 production activation
+
+### Fixed
+
+- DLQ-drain lineage now preserves the controlled recovery action rather than collapsing it into a generic retry action.
+- Delivery retry dispatch preserves the drain source identifier.
+- Sanitized dispatch evidence remains attached to the resulting attempt.
+
+### Operations
+
+- An isolated acceptance sink was added for deterministic success and failure modes.
+- Production activation evidence covered Delivery retries, DLQ lineage, and worker execution.
+
+## 2026-07-14 — Docs v0.2.9
+
+### Added
+
+- Controlled DLQ drain documentation.
+- DLQ-drain readiness guidance.
+- Operator confirmation and audit expectations.
+- Clear distinction between automatic retry, Retry Now, replay, and DLQ drain.
+
+## 2026-07-12 — Delivery v1.9
+
+### Added
+
+- Controlled DLQ drain execution.
+- DLQ-drain audit lineage.
+- Capability-gated operator action.
+- Frontend controls for eligible terminal attempts.
+
+### Changed
+
+- Alembic became authoritative for the production schema lifecycle.
+
+## 2026-07-11 — Docs v0.2.8
+
+### Added
+
+- RBAC capability metadata documentation.
+- Guidance for capability-aware frontend controls.
+- Separation between role names and effective project capabilities.
+
+## 2026-07-11 — Docs v0.2.7
+
+### Added
+
+- Operator-permission documentation for Delivery.
+- Owner, Operator, and Viewer action boundaries.
+- Guidance for sanitized authorization failures.
+
+## 2026-07-11 — Docs v0.2.6
+
+### Added
+
+- Retry Now execution documentation.
+- Retry Now readiness checks.
+- Eligibility and confirmation guidance.
+- Production-proof and hardening notes.
+
+## 2026-07-11 — Docs v0.2.5
+
+### Added
+
+- Operator-action readiness documentation.
+- Pre-mutation checks for replay, Retry Now, and DLQ drain.
+- Guidance that readiness is a point-in-time result, not a reservation.
+
+## 2026-07-10 — Docs v0.2.4
+
+### Added
+
+- Delivery retry-audit visibility.
+- Worker attribution and retry-decision evidence.
+- Retry outcome and termination guidance.
+
+## 2026-07-09 — Docs v0.2.3
+
+### Added
+
+- Automatic Delivery retry-worker operations.
+- Retry scheduling and worker configuration guidance.
+- PostgreSQL locking and claim-safety notes.
+- Production deployment and smoke-verification updates.
+
+## 2026-07-08 — Docs v0.2.2
+
+### Added
+
+- Retry and DLQ visibility.
+- Retry state, retry count, maximum retry count, next retry time, terminal time, DLQ time, and DLQ reason.
+- UI states for retryable, scheduled retry, retry exhausted, DLQ, and terminal attempts.
+
+### Boundary
+
+This release documented visibility. It did not yet claim Retry Now or DLQ drain execution.
+
+## 2026-07-08 — Docs v0.2.1
+
+### Added
+
+- Delivery lifecycle visibility.
+- Attempt-state interpretation.
+- Delivery history and attempt-detail guidance.
+
+## 2026-07-07 — Docs v0.2
+
+### Added
+
+- Delivery replay documentation.
+- Replay readiness.
+- Backend replay execution.
+- Confirmation and audit expectations.
+
+## 2026-07-06 — Delivery v1.0
+
+### Added
+
+- Delivery notification channels.
+- Delivery history.
+- Attempt details.
+- Initial replay-readiness contract.
+- Dashboard Delivery surface.
+
+## 2026-07-04 — Sentinel evaluation runtime v2.0
+
+### Added
+
+- Sentinel evaluation runtime foundation.
+- Rule evaluation persistence.
+- Evaluation readiness and history.
+- Frontend rule recommendations, alert-to-event trace, rule health, activity, filtering, and bulk actions.
+
+## 2026-07-01 to 2026-07-03 — Event Sources, Core Events, and Sentinel
+
+### Event Sources
+
+- Command-centre views.
+- Setup onboarding.
+- Verification flow result state.
+- Persisted setup progress.
+- Setup completion score.
+- Source readiness gate.
+
+### Core Events
+
+- Event detail drawer.
+- Hardened search and filters.
+- Source timeline.
+- Payload inspector.
+- Storage visibility.
+
+### Sentinel
+
+- Rule recommendations.
+- Alert-to-event trace.
+- Rule creation from recommendations.
+- Rule health and coverage.
+- Activity timeline.
+- Detail drawer.
+- Filtering views.
+- Bulk actions.
+- Evaluation readiness and history.
+
+## 2026-06-30 — Scheduled API connectors
+
+### Added
+
+- Scheduled runs for third-party API connectors.
+- Frontend scheduling controls.
+- Connector execution and configuration lifecycle.
+
+## 2026-06-23 to 2026-06-24 — Third-party API ingestion
+
+### Added
+
+- Third-party API ingestion foundation.
+- Connector configuration endpoints.
+- Connector execution endpoints.
+- Secret-backed connector authentication.
+- PostgreSQL integration compatibility.
+- Authenticated connector smoke coverage.
+
+## 2026-06-19 to 2026-06-21 — Source Intelligence operations
+
+### Added
+
+- Persistence APIs for Source Intelligence actions.
+- Notification-trigger persistence.
+- Trigger-delivery tracking.
+- Investigation history and timeline.
+- Source-filtered Delivery diagnostics.
+- Delivery metrics and attempt timelines linked to source context.
+- Replay entry points from source operations.
+
+## 2026-06-14 to 2026-06-15 — Sentinel Automation v1
+
+### Added
+
+- Persistence tables and models.
+- Approval workflow.
+- Execution preview.
+- Audit trail.
+- Run simulation.
+- Policy guardrails.
+- API routes and OpenAPI coverage.
+
+## 2026-06-01 — Docs v0.1
+
+**Developer Preview documentation foundation**
+
+### Added
+
+- Getting Started.
+- Concepts.
+- Event Sources.
+- Ingestion API.
+- Events API.
+- Authentication.
+- Idempotency.
+- Errors.
+- Roadmap.
+- Documentation pagination and navigation.
+
+### Security and reliability
+
+- Alert-destination secret handling was corrected.
+- Outbound webhook delivery was hardened against SSRF.
+- Production configuration validation was strengthened.
+- Backend and documentation dependency vulnerabilities were addressed.
+- Redis-backed rate limiting became required in production.
+
+## 2026-05-31 — Ingestion contract and developer tooling
+
+### Added
+
+- Typed event-ingestion response contract.
+- Public ingestion examples.
+- Source developer setup snippets.
+- Idempotency-key support in event tracking work.
+- API response-model coverage policy.
+- Production smoke documentation and scheduled smoke checks.
+
+## 2026-05-27 to 2026-05-29 — Infrastructure, OAuth, and Core Storage
+
+### Added
+
+- Terraform foundation and production inventory.
+- Production deployment orchestration.
+- Google and Apple account login.
+- Google OAuth production deployment.
+- Core Storage upload and quota enforcement.
+- Storage cost barometer.
+- Billing guardrails.
+
+## 2026-05-15 to 2026-05-23 — Security, Sentinel, and Event Sources
+
+### Added
+
+- MFA challenge login.
+- Sentinel v1 alerts.
+- Core Storage S3 foundation.
+- Browser-safe website-key management.
+- Source pipeline verification.
+- Source activity trail and summary.
+- Source lifecycle validation, disable, and archive operations.
+- OpenAPI snapshot and drift checks.
+- Expanded authorization regression coverage.
+
+## 2026-05-01 to 2026-05-14 — Authentication and platform foundation
+
+### Added
+
+- Password reset.
+- Passkey-based MFA.
+- Trusted devices.
+- Passwordless passkey sign-in.
+- Source test events.
+- Source API-key rotation.
+- Source attribution for API keys.
+- Secure event streaming.
+- Usage-metering corrections.
+- Organization and project authorization hardening.
+
+## 2026-03-14 — Foundation checkpoint
+
+The backend tag:
+
+```text
+v0.1.0-foundation
+```
+
+marks the Lariba Cloud foundation checkpoint before later Alert Engine and operational-control work.
+
+## Release-note policy
+
+Future changelog entries should:
+
+1. use an evidence-backed date;
+2. identify the affected version line;
+3. separate documentation, API, dashboard, worker, SDK, and acceptance changes;
+4. distinguish availability from visibility-only work;
+5. distinguish implementation from production acceptance;
+6. record security and operational boundaries;
+7. avoid publishing credentials, customer identifiers, deployment secrets, or private operational data;
+8. link to stable public documentation rather than internal recovery material.
+
+## Related documentation
+
+- [API Reference Overview](/reference/overview)
+- [Event Ingestion](/guides/event-ingestion)
+- [Webhooks](/guides/webhooks)
+- [Billing](/guides/billing)
+- [Worker Health and Recovery](/operations/worker-health-and-recovery)
+- [SDKs](/sdks)
