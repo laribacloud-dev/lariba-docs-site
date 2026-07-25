@@ -1,5 +1,71 @@
-# Lariba Cloud Documentation
+# Lariba Cloud
 
-Welcome to Lariba Cloud.
+Lariba Cloud is an **operational event control plane for digital products**.
 
-Start here: [Quickstart](/quickstart)
+It connects producer identity, event evidence, investigation, Delivery, controlled recovery, and audit within a project-scoped operational model.
+
+---
+
+## What Lariba Cloud provides
+
+Lariba Cloud helps engineering and operations teams answer critical questions:
+
+- What happened?
+- Which system produced the event?
+- Where did processing or Delivery fail?
+- What action was attempted?
+- Can the operation be retried safely?
+- Who authorized the recovery action?
+- What evidence remains afterward?
+
+Lariba Cloud complements application monitoring and logging systems. It does not replace them.
+
+---
+
+## Resource model
+
+Lariba Cloud organizes operational evidence through this hierarchy:
+
+**Organization → Project → Event Source → Source API Key → Event**
+
+| Resource | Purpose |
+| --- | --- |
+| Organization | Owns projects, membership, billing, and governance |
+| Project | Isolates operational data, permissions, and configuration |
+| Event Source | Identifies the system producing an event |
+| Source API Key | Authenticates ingestion for a specific source scope |
+| Event | Preserves structured operational evidence |
+| Delivery Attempt | Records an outbound action and its result |
+| Audit Record | Preserves authorized recovery and operator activity |
+
+---
+
+## Operational workflow
+
+A typical Lariba Cloud workflow follows this sequence:
+
+1. identify the producer;
+2. authenticate the Event Source;
+3. validate and deduplicate the event;
+4. preserve operational evidence;
+5. investigate the event and its context;
+6. execute Delivery workflows;
+7. apply controlled recovery when authorized;
+8. retain audit evidence.
+
+Recovery appends evidence rather than rewriting the original failure.
+
+---
+
+## Start building
+
+Use the Quickstart to configure an API key and submit your first event.
+
+Then explore the event-ingestion, authentication, Delivery, and operational recovery documentation.
+
+- [Quickstart](/quickstart)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
+- [Worker Health and Recovery](/operations/worker-health-and-recovery)

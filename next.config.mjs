@@ -11,6 +11,21 @@ const withNextra = nextra({
 export default withNextra({
   reactStrictMode: true,
 
+  async redirects() {
+    return [
+      {
+        source: '/api/overview',
+        destination: '/reference/overview',
+        permanent: true
+      },
+      {
+        source: '/api/:path*',
+        destination: '/reference/:path*',
+        permanent: true
+      }
+    ]
+  },
+
   webpack: (config, { webpack }) => {
     // Also define it for client/server bundles (webpack side)
     config.plugins.push(

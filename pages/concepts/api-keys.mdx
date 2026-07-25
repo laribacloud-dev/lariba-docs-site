@@ -1,0 +1,178 @@
+# API Keys
+
+API keys are machine credentials used by services, Event Sources, workers, and automated producers.
+
+They are separate from human authentication:
+
+- human users authenticate with access and refresh tokens;
+- machines authenticate with the `X-API-Key` request header.
+
+## Why API keys exist
+
+An API key gives a non-human client a stable project identity and a defined authorization boundary.
+
+The key determines:
+
+- which project receives the request;
+- which Event Source is associated with the request, when the key is source-linked;
+- which scopes the caller may use;
+- whether the credential is active, expired, or revoked.
+
+## Key categories
+
+Lariba Cloud uses three related categories.
+
+| Category | Intended use |
+| --- | --- |
+| Project API key | General project-scoped machine access according to configured scopes |
+| Source-linked server key | Server-side event ingestion and source operations for one Event Source |
+| Browser-safe source key | Browser ingestion constrained by allowed origins, event types, and rate limits |
+
+The categories share the same credential lifecycle, but they have different exposure and authorization models.
+
+## Project identity and source identity
+
+Every API key belongs to a project.
+
+A key may also be linked to an Event Source through `source_id`.
+
+A source-linked key allows Lariba Cloud to attribute ingestion activity to both:
+
+1. the project that owns the operational data;
+2. the Event Source that produced it.
+
+This attribution supports investigation, usage accounting, key rotation, and source activity history.
+
+## Scopes
+
+Scopes restrict what a key may do.
+
+Examples used by the current platform include:
+
+- `events:write`
+- `events:read`
+- `projects:read`
+
+A source-linked server key is created with the scopes required for its ingestion lifecycle. Project API keys use the scope configured when they are created.
+
+Apply least privilege: assign only the scopes required by the integration.
+
+## Credential disclosure
+
+The plaintext credential is returned when a key is created.
+
+Source-key rotation also returns the new plaintext credential.
+
+After that response, normal read operations expose metadata such as:
+
+- key identifier;
+- name;
+- key prefix;
+- scope;
+- creation time;
+- last-use time;
+- expiration time;
+- revocation time;
+- source relationship;
+- lifecycle status.
+
+The plaintext credential is not part of normal list responses.
+
+## Storage model
+
+Lariba Cloud stores a key hash for authentication and a short key prefix for identification.
+
+The prefix helps operators distinguish credentials without exposing the secret value.
+
+Treat the full key as a secret:
+
+- store it in a managed secret system;
+- do not commit it to source control;
+- do not place it in URLs or event payloads;
+- do not expose it in logs, screenshots, or browser bundles.
+
+## Lifecycle states
+
+A key can have one of three operational states:
+
+| State | Meaning |
+| --- | --- |
+| `active` | The key is available for authorized requests |
+| `expired` | Its expiration time has passed |
+| `revoked` | It was explicitly disabled and must no longer be used |
+
+Revocation takes precedence over expiration when determining status.
+
+## Rotation
+
+Rotation replaces a source-linked server credential and revokes the previous active source key.
+
+Use rotation when:
+
+- a credential may have been exposed;
+- an integration changes ownership;
+- a scheduled security policy requires replacement;
+- a deployment environment is being rebuilt.
+
+Update the producer with the new key immediately after rotation.
+
+## Revocation
+
+Revocation invalidates a project API key without deleting its metadata.
+
+Revoke a key when:
+
+- an integration is retired;
+- a credential is lost or exposed;
+- an operator or service no longer requires access;
+- a replacement key is active.
+
+Do not rely on deleting documentation, configuration, or logs to invalidate a credential. Revoke it through the API-key lifecycle.
+
+## Browser-safe keys
+
+Browser-safe source keys are designed for controlled client-side ingestion.
+
+They can restrict:
+
+- allowed origins;
+- allowed event types;
+- requests per minute.
+
+These restrictions reduce exposure, but a browser-safe key is still a credential. It should be limited to the smallest practical origin and event-type set.
+
+Never embed a project API key or source-linked server key in public browser code.
+
+## Environment isolation
+
+Use separate keys for development, staging, and production.
+
+Environment isolation provides:
+
+- clearer activity attribution;
+- smaller exposure boundaries;
+- independent rotation;
+- safer incident response;
+- simpler decommissioning.
+
+Do not reuse a production key in local development or test fixtures.
+
+## Operational checklist
+
+Before activating an integration:
+
+1. select the correct project and Event Source;
+2. choose the minimum required scopes;
+3. store the plaintext key securely;
+4. verify the request uses `X-API-Key`;
+5. test the integration;
+6. monitor last-use and source activity;
+7. define a rotation and revocation procedure.
+
+## Related documentation
+
+- [API Keys guide](/api-keys)
+- [API Keys reference](/reference/api-keys)
+- [Authentication](/authentication)
+- [Events API](/reference/events)
+- [Event Ingestion guide](/guides/event-ingestion)

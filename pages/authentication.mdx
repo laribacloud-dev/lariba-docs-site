@@ -1,0 +1,268 @@
+# Authentication
+
+Lariba Cloud separates **human authentication** from **machine authentication**.
+
+- Human users sign in with access and refresh tokens.
+- Services, Event Sources, and automated producers use API keys.
+
+This page covers human account authentication. For machine access, see [API Keys](/api-keys).
+
+## Authentication model
+
+Protected human-user endpoints accept an OAuth2 Bearer access token:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+The access token identifies the user and session. A refresh token is used to obtain a new access token without signing in again.
+
+## Core endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/v1/auth/register` | Create an account |
+| `POST` | `/v1/auth/verify-email` | Verify a registered email address |
+| `POST` | `/v1/auth/resend-verification` | Request a new verification email |
+| `POST` | `/v1/auth/login` | Sign in with email and password |
+| `POST` | `/v1/auth/refresh` | Rotate the refresh token and issue new tokens |
+| `POST` | `/v1/auth/logout` | Revoke a refresh-token session |
+| `GET` | `/v1/auth/me` | Return the authenticated user |
+| `POST` | `/v1/auth/oauth/login` | Complete an OAuth login |
+| `POST` | `/v1/auth/password-reset/request` | Request a password-reset link |
+| `POST` | `/v1/auth/password-reset/confirm` | Set a new password with a reset token |
+
+Use the API base URL configured for the target Lariba Cloud environment:
+
+```text
+$LARIBA_API_BASE_URL/v1/auth/login
+```
+
+## Register and verify an account
+
+Registration accepts JSON:
+
+```json
+{
+  "email": "developer@example.com",
+  "password": "REPLACE_WITH_A_STRONG_PASSWORD",
+  "name": "Developer"
+}
+```
+
+`email` and `password` are required. The password must contain at least eight characters. `name` is optional.
+
+After registration, the account must be verified through the email-verification flow before normal sign-in can complete.
+
+Verify an address with:
+
+```json
+{
+  "email": "developer@example.com",
+  "token": "EMAIL_VERIFICATION_TOKEN"
+}
+```
+
+Send that body to `POST /v1/auth/verify-email`.
+
+To request another verification message, send the email address to `POST /v1/auth/resend-verification`.
+
+## Password login
+
+`POST /v1/auth/login` consumes `application/x-www-form-urlencoded`, not JSON.
+
+Required form fields:
+
+| Field | Required | Purpose |
+| --- | --- | --- |
+| `username` | Yes | The account email address |
+| `password` | Yes | The account password |
+| `otp_code` | No | Authenticator code for a supported login flow |
+| `recovery_code` | No | Recovery code for a supported login flow |
+| `remember_device` | No | Requests a trusted-device credential |
+| `trusted_device_token` | No | Supplies an existing trusted-device credential |
+
+Example:
+
+```bash
+curl --request POST \
+  "$LARIBA_API_BASE_URL/v1/auth/login" \
+  --header "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "username=developer@example.com" \
+  --data-urlencode "password=REPLACE_WITH_A_STRONG_PASSWORD"
+```
+
+A successful authentication response includes:
+
+```json
+{
+  "access_token": "ACCESS_TOKEN",
+  "refresh_token": "REFRESH_TOKEN",
+  "access_expires_in": 900,
+  "refresh_expires_in": 2592000,
+  "token_type": "bearer"
+}
+```
+
+The duration values above are illustrative. Use the values returned by the active environment.
+
+## Use an access token
+
+Send the access token to a protected human-user endpoint:
+
+```bash
+curl "$LARIBA_API_BASE_URL/v1/auth/me" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+Do not use a human access token in the `X-API-Key` header. Do not use an API key as a Bearer token.
+
+## Refresh a session
+
+Send the current refresh token as JSON:
+
+```json
+{
+  "refresh_token": "REFRESH_TOKEN"
+}
+```
+
+`POST /v1/auth/refresh` returns a new access token and a rotated refresh token. Replace the previous refresh token immediately after a successful refresh.
+
+Refresh-token sessions are stored using a hash of the credential rather than the plaintext value.
+
+## Log out
+
+Send the current refresh token to `POST /v1/auth/logout`:
+
+```json
+{
+  "refresh_token": "REFRESH_TOKEN"
+}
+```
+
+Logout revokes the matching refresh-token session. The endpoint returns a successful sign-out response even when no active matching session remains.
+
+## Multi-factor authentication
+
+Lariba Cloud supports these additional authentication methods:
+
+- authenticator-app TOTP;
+- passkeys;
+- single-use recovery codes;
+- trusted devices.
+
+A login that requires another factor can issue a challenge token. Complete the challenge through the corresponding endpoint:
+
+| Method | Endpoint | Factor |
+| --- | --- | --- |
+| `POST` | `/v1/auth/mfa/totp/verify` | Authenticator code |
+| `POST` | `/v1/auth/mfa/passkey/options` | Begin passkey verification |
+| `POST` | `/v1/auth/mfa/passkey/verify` | Complete passkey verification |
+| `POST` | `/v1/auth/mfa/recovery-code/verify` | Recovery code |
+
+TOTP and recovery-code verification require a `challenge_token`, the factor value, and an optional `remember_device` flag. Passkey verification requires the challenge token and WebAuthn credential response.
+
+## Passkeys
+
+Passkeys can be used as a login method and as an additional authentication factor.
+
+Account-management endpoints include:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/account/passkeys` | List registered passkeys |
+| `POST` | `/v1/account/passkeys/register/options` | Begin registration |
+| `POST` | `/v1/account/passkeys/register/verify` | Complete registration |
+| `PATCH` | `/v1/account/passkeys/{passkey_id}` | Rename a passkey |
+| `POST` | `/v1/account/passkeys/{passkey_id}/remove` | Remove a passkey |
+
+Passkey registration and removal are protected account actions. Registration can generate recovery codes when the account does not already have them.
+
+Passwordless passkey login is available through:
+
+- `POST /v1/auth/passkey/passwordless/options`
+- `POST /v1/auth/passkey/passwordless/verify`
+
+## Authenticator-based two-factor authentication
+
+Account-level authenticator management uses:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/account/two-factor` | Read current status |
+| `POST` | `/v1/account/two-factor/setup` | Begin setup |
+| `POST` | `/v1/account/two-factor/enable` | Confirm setup |
+| `POST` | `/v1/account/two-factor/disable` | Disable the authenticator |
+| `POST` | `/v1/account/two-factor/recovery-codes/regenerate` | Replace recovery codes |
+
+Setup requires the current password. Enabling the authenticator requires a valid code from the pending setup. Recovery codes returned during setup or regeneration must be stored securely because they are authentication credentials.
+
+Sensitive changes can require the current password plus an authenticator code or recovery code.
+
+## Trusted devices
+
+A successful MFA flow can return a trusted-device credential when `remember_device` is enabled.
+
+Manage trusted devices through:
+
+- `GET /v1/account/trusted-devices`
+- `POST /v1/account/trusted-devices/{device_id}/revoke`
+
+The trusted-device credential is supplied through the `X-Trusted-Device-Token` header where supported. Treat it as a secret.
+
+When all second-factor methods are removed, Lariba Cloud revokes the user's trusted devices.
+
+## OAuth login
+
+`POST /v1/auth/oauth/login` accepts JSON containing:
+
+| Field | Required | Purpose |
+| --- | --- | --- |
+| `provider` | Yes | `google` or `apple` |
+| `code` | Yes | Provider authorization code |
+| `redirect_uri` | Yes | Redirect URI used by the client |
+| `nonce` | Yes | OAuth nonce |
+| `raw_user` | No | Provider-specific user data where required |
+
+The OAuth authorization-code exchange should be completed by the application integration. Do not expose provider codes, nonces, tokens, or callback parameters in logs.
+
+## Password reset
+
+Request a reset with:
+
+```json
+{
+  "email": "developer@example.com"
+}
+```
+
+The request endpoint returns a neutral success response whether or not the account exists.
+
+Confirm the reset with:
+
+```json
+{
+  "token": "PASSWORD_RESET_TOKEN",
+  "password": "REPLACE_WITH_A_NEW_STRONG_PASSWORD"
+}
+```
+
+A successful reset revokes existing user sessions and trusted devices.
+
+## Security requirements
+
+- Store refresh tokens, trusted-device tokens, recovery codes, and OAuth credentials as secrets.
+- Never place tokens in URLs, screenshots, logs, analytics events, or source control.
+- Replace a refresh token after every successful refresh.
+- Revoke trusted devices that are no longer controlled.
+- Regenerate recovery codes after suspected exposure.
+- Use API keys, not human tokens, for services and event producers.
+- Use separate credentials for development, staging, and production.
+
+## Related documentation
+
+- [API Keys](/api-keys)
+- [API Keys reference](/reference/api-keys)
+- [Events API](/reference/events)
+- [Organizations and Projects](/concepts/orgs-projects)

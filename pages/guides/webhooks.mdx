@@ -1,0 +1,974 @@
+# Webhooks
+
+Lariba Cloud uses webhooks in three separate operational contexts:
+
+| Surface | Direction | Purpose |
+| --- | --- | --- |
+| Delivery channels | Outbound | Send test and rule-match notifications to customer endpoints |
+| Alert destinations | Outbound | Deliver alert events to webhook or Slack destinations |
+| Stripe webhook | Inbound | Receive signed billing lifecycle events from Stripe |
+
+These surfaces have different authentication, payload, retry, evidence, and signing contracts.
+
+`POST /v1/events/ingest` is the event-ingestion API. It is not a generic inbound webhook receiver.
+
+## Authentication
+
+Customer webhook configuration and Delivery evidence use a human-user Bearer token:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+The Stripe webhook does not use a Bearer token or Lariba Cloud API key. Stripe authenticates the request by signing the raw request body.
+
+## Delivery authorization
+
+Delivery routes use project-scoped capabilities.
+
+| Project role | Delivery capabilities |
+| --- | --- |
+| `viewer` | Read channels, attempts, readiness, and evidence |
+| `member` | Read and manage channels |
+| `operator` | Read, replay, and retry immediately |
+| `admin` | All Delivery capabilities |
+| `owner` | All Delivery capabilities |
+
+The capabilities are:
+
+```text
+delivery:read
+delivery:manage_channels
+delivery:replay
+delivery:retry_now
+delivery:dlq_drain
+```
+
+A user interface may use returned capability metadata to hide unavailable controls, but backend authorization remains authoritative.
+
+Alert-destination routes currently use authoritative project membership rather than the Delivery capability matrix.
+
+## Delivery endpoint surface
+
+The Delivery API exposes:
+
+```text
+GET    /v1/delivery/channels
+POST   /v1/delivery/channels
+PATCH  /v1/delivery/channels/{channel_id}
+DELETE /v1/delivery/channels/{channel_id}
+
+POST   /v1/delivery/channels/{channel_id}/protected-headers
+PATCH  /v1/delivery/channels/{channel_id}/protected-headers/{header_name}
+DELETE /v1/delivery/channels/{channel_id}/protected-headers/{header_name}
+
+POST   /v1/delivery/channels/{channel_id}/test
+
+GET    /v1/delivery/history
+GET    /v1/delivery/history/{attempt_id}
+GET    /v1/delivery/retry-audits
+
+POST   /v1/delivery/history/{attempt_id}/replay-readiness
+POST   /v1/delivery/history/{attempt_id}/replay
+POST   /v1/delivery/history/{attempt_id}/retry-now-readiness
+POST   /v1/delivery/history/{attempt_id}/retry-now
+POST   /v1/delivery/history/{attempt_id}/dlq-drain-readiness
+POST   /v1/delivery/history/{attempt_id}/dlq-drain
+```
+
+All Delivery endpoints require Bearer authentication.
+
+## Create a webhook channel
+
+Create a project-scoped webhook channel with:
+
+```text
+POST /v1/delivery/channels
+```
+
+Example:
+
+```bash
+curl --silent --show-error \
+  --request POST \
+  "${LARIBA_API_BASE_URL}/v1/delivery/channels" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "project_id": "PROJECT_UUID",
+    "name": "Operations webhook",
+    "type": "webhook",
+    "enabled": true,
+    "configuration": {
+      "url": "https://hooks.example.com/lariba",
+      "method": "POST",
+      "headers": {
+        "X-Integration-Version": "2026-07"
+      }
+    },
+    "protected_headers": [
+      {
+        "name": "Authorization",
+        "value": "Bearer DESTINATION_TOKEN"
+      }
+    ]
+  }'
+```
+
+The required channel fields are:
+
+| Field | Requirement | Notes |
+| --- | --- | --- |
+| `project_id` | Required | Project receiving the Delivery configuration |
+| `name` | Required | Between 1 and 200 characters |
+| `type` | Required | `email` or `webhook` |
+| `enabled` | Optional | Defaults to `true` |
+| `configuration` | Optional | Type-specific configuration object |
+| `protected_headers` | Optional | Write-only protected header values |
+
+Creating or changing a channel requires `delivery:manage_channels`.
+
+## Webhook configuration
+
+A Delivery webhook configuration uses:
+
+| Field | Default | Contract |
+| --- | --- | --- |
+| `url` | — | Required HTTP or HTTPS destination |
+| `method` | `POST` | `POST`, `PUT`, or `PATCH` |
+| `headers` | `{}` | Public, non-secret headers |
+
+The dispatcher sends JSON and uses a five-second request timeout.
+
+Redirect following is disabled. A redirect response is treated as the destination response rather than followed to another host.
+
+### Header constraints
+
+Public webhook headers are intended for non-sensitive metadata.
+
+The current limits are:
+
+| Constraint | Value |
+| --- | ---: |
+| Combined supported webhook headers | 20 |
+| Public header-name length | 80 characters |
+| Public header-value length | 300 characters |
+| Protected header-name length | 80 characters |
+| Protected header-value length | 2,048 characters |
+
+Do not place API keys, Bearer tokens, passwords, or shared secrets in `configuration.headers`. Use protected headers.
+
+### URL safety
+
+Lariba Cloud validates a destination when it is configured and again before an outbound request.
+
+The current controls include:
+
+- only HTTP and HTTPS URLs;
+- blocked localhost and local-network hostnames;
+- blocked internal and metadata-service destinations;
+- rejection of non-public destination addresses;
+- disabled redirect following;
+- rejection of credential-like query parameters for Delivery channels.
+
+A destination such as the following is rejected:
+
+```text
+http://169.254.169.254/latest/meta-data
+```
+
+A secret in a webhook URL is unsafe even when a provider supports it. Put credentials in protected headers instead.
+
+## Protected headers
+
+Protected headers are available only for Delivery channels of type `webhook`.
+
+They are designed for values such as:
+
+```text
+Authorization
+X-Api-Key
+X-Webhook-Token
+```
+
+A protected-header write uses:
+
+```json
+{
+  "name": "Authorization",
+  "value": "Bearer DESTINATION_TOKEN"
+}
+```
+
+The `value` field is marked write-only in the OpenAPI schema.
+
+### Storage and response model
+
+Lariba Cloud:
+
+1. validates the header name and value;
+2. normalizes the header name for collision detection;
+3. encrypts the value before persistence;
+4. stores the encryption key version;
+5. returns masked metadata rather than plaintext;
+6. decrypts the value only while constructing the runtime outbound request.
+
+A protected-header response has this shape:
+
+```json
+{
+  "name": "Authorization",
+  "configured": true,
+  "masked_value": "********",
+  "last_rotated_at": "2026-07-24T20:00:00Z"
+}
+```
+
+Plaintext protected values are not returned by list, update, history, retry-audit, replay, or readiness responses.
+
+### Collision and uniqueness rules
+
+Header names are compared case-insensitively.
+
+The API rejects:
+
+- duplicate protected header names;
+- a protected header that duplicates a public header;
+- a public header that duplicates an existing protected header;
+- unsupported or transport-controlled header names;
+- a combined public and protected header count above the supported limit.
+
+### Add a protected header
+
+```bash
+curl --silent --show-error \
+  --request POST \
+  "${LARIBA_API_BASE_URL}/v1/delivery/channels/${LARIBA_CHANNEL_ID}/protected-headers?project_id=${LARIBA_PROJECT_ID}" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "name": "X-Api-Key",
+    "value": "DESTINATION_API_KEY"
+  }'
+```
+
+A duplicate protected header returns HTTP `409`.
+
+### Rotate a protected header
+
+```bash
+curl --silent --show-error \
+  --request PATCH \
+  "${LARIBA_API_BASE_URL}/v1/delivery/channels/${LARIBA_CHANNEL_ID}/protected-headers/X-Api-Key?project_id=${LARIBA_PROJECT_ID}" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "value": "NEW_DESTINATION_API_KEY"
+  }'
+```
+
+Rotation replaces the encrypted value, updates the key-version metadata, records the actor, and updates the rotation timestamp.
+
+### Remove a protected header
+
+```bash
+curl --silent --show-error \
+  --request DELETE \
+  "${LARIBA_API_BASE_URL}/v1/delivery/channels/${LARIBA_CHANNEL_ID}/protected-headers/X-Api-Key?project_id=${LARIBA_PROJECT_ID}" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+Successful removal returns the removed header name, not its value.
+
+### Cryptographic availability
+
+When the protected-credential cryptographic service is unavailable, protected-header operations can return HTTP `503`:
+
+```json
+{
+  "detail": "Protected webhook headers are unavailable"
+}
+```
+
+Do not bypass this failure by moving credentials into public configuration.
+
+## Update a channel
+
+```text
+PATCH /v1/delivery/channels/{channel_id}?project_id={project_id}
+```
+
+The update body can change:
+
+- `name`;
+- `enabled`;
+- `configuration`;
+- `protected_headers`.
+
+Supplying `protected_headers` during an update performs protected-header upsert semantics:
+
+- a new name is added;
+- an existing name is rotated.
+
+Protected headers omitted from the update are not implicitly deleted. Use the explicit DELETE route to remove one.
+
+## Disable versus delete
+
+Disable a channel by updating:
+
+```json
+{
+  "enabled": false
+}
+```
+
+Disabling preserves the channel and its Delivery evidence.
+
+Channel deletion is blocked when any Delivery attempt references that channel. The API returns HTTP `409`:
+
+```json
+{
+  "detail": "Notification channel cannot be deleted while delivery evidence exists. Disable the channel instead."
+}
+```
+
+A channel without Delivery evidence can be deleted. Associated protected-header records are removed with it, and the deletion is audited without storing plaintext credentials.
+
+## Test a channel
+
+```text
+POST /v1/delivery/channels/{channel_id}/test
+```
+
+Example:
+
+```bash
+curl --silent --show-error \
+  --request POST \
+  "${LARIBA_API_BASE_URL}/v1/delivery/channels/${LARIBA_CHANNEL_ID}/test?project_id=${LARIBA_PROJECT_ID}" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"
+```
+
+The action creates a Delivery attempt and returns:
+
+```json
+{
+  "ok": true,
+  "channel_id": "CHANNEL_UUID",
+  "delivery_id": "DELIVERY_ATTEMPT_UUID",
+  "status": "sent",
+  "response_code": 202,
+  "response_summary": "accepted",
+  "failure_reason": null,
+  "tested_at": "2026-07-24T20:10:00Z"
+}
+```
+
+A test is operational evidence. It is not merely a connection check.
+
+## Delivery history
+
+List Delivery evidence with:
+
+```text
+GET /v1/delivery/history
+```
+
+Supported filters are:
+
+| Parameter | Values or constraint |
+| --- | --- |
+| `project_id` | Required UUID |
+| `status` | `pending`, `sent`, or `failed` |
+| `channel_id` | Channel UUID |
+| `channel_type` | `email` or `webhook` |
+| `kind` | `test` or `rule_match` |
+| `retry_state` | `pending`, `retryable`, `scheduled_retry`, `retry_exhausted`, `dlq`, or `terminal` |
+| `dlq` | Boolean |
+| `retryable` | Boolean |
+| `limit` | Default 25, minimum 1, maximum 100 |
+| `offset` | Default 0, minimum 0 |
+
+Example:
+
+```bash
+curl --silent --show-error \
+  --get \
+  "${LARIBA_API_BASE_URL}/v1/delivery/history" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN" \
+  --data-urlencode "project_id=$LARIBA_PROJECT_ID" \
+  --data-urlencode "channel_type=webhook" \
+  --data-urlencode "status=failed" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+The list response contains:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 25,
+  "offset": 0
+}
+```
+
+## Attempt details
+
+Read one attempt with:
+
+```text
+GET /v1/delivery/history/{attempt_id}
+```
+
+The detail response can include:
+
+- channel and project identifiers;
+- channel name and type;
+- channel enabled state;
+- attempt status and kind;
+- response code and sanitized response summary;
+- sanitized failure reason;
+- retry count and policy;
+- retry state and next retry time;
+- terminal and DLQ timestamps;
+- related event, source, rule, and evaluation identifiers;
+- sanitized request and response metadata;
+- replay readiness;
+- lifecycle and lineage.
+
+### Sanitized evidence
+
+Delivery history is designed for investigation without exposing destination credentials.
+
+The response sanitization removes or masks:
+
+- Bearer tokens;
+- API keys;
+- authorization headers;
+- password, secret, and token assignments;
+- sensitive query parameters;
+- raw credential-bearing paths;
+- destination configuration objects;
+- protected-header values;
+- sensitive provider response fragments.
+
+Sanitized text is bounded to 500 characters.
+
+Treat the returned evidence as a safe operational summary, not as a full copy of every outbound request or provider response.
+
+## Delivery lifecycle
+
+A Delivery attempt can expose lifecycle labels including:
+
+```text
+original
+replay
+retryable
+scheduled_retry
+retry_exhausted
+dlq
+terminal
+replay_created
+replay_blocked
+```
+
+Lineage fields can identify:
+
+- the original attempt;
+- a parent attempt;
+- a replay attempt and its source;
+- a DLQ-drain attempt and its source.
+
+Recovery actions create additional evidence. They do not overwrite the original failure.
+
+## Automatic Delivery retries
+
+The default Delivery retry policy is:
+
+```json
+{
+  "strategy": "exponential",
+  "base_delay_seconds": 60,
+  "max_delay_seconds": 900,
+  "max_attempts": 3
+}
+```
+
+Supported strategies are:
+
+```text
+fixed
+linear
+exponential
+```
+
+Policy bounds are:
+
+| Field | Minimum | Maximum |
+| --- | ---: | ---: |
+| `base_delay_seconds` | 1 | 86,400 |
+| `max_delay_seconds` | 1 | 604,800 |
+| `max_attempts` | 0 | 100 |
+
+Transient timeout, network, connection, temporary-unavailability, and rate-limit failures can be retry candidates.
+
+The persistent Delivery retry worker currently defaults to:
+
+| Setting | Default |
+| --- | ---: |
+| Batch size | 10 |
+| Poll interval | 10 seconds |
+| Claim lease | 120 seconds |
+
+Claiming prevents two workers from dispatching the same due retry concurrently.
+
+Worker health and Delivery-attempt evidence are separate records. A healthy worker does not prove a specific webhook succeeded.
+
+## Retry audits
+
+List retry evidence with:
+
+```text
+GET /v1/delivery/retry-audits
+```
+
+Filters include:
+
+| Parameter | Values or constraint |
+| --- | --- |
+| `project_id` | Required UUID |
+| `delivery_id` | Optional attempt UUID |
+| `status` | `claimed`, `dispatched`, `failed`, `exhausted`, or `skipped` |
+| `worker_id` | Optional string, 1–120 characters |
+| `limit` | Default 25, maximum 100 |
+| `offset` | Default 0 |
+
+Retry-audit entries can include:
+
+- retry number;
+- worker identifier;
+- status;
+- start and finish times;
+- response code;
+- sanitized response summary;
+- sanitized reason.
+
+Worker identifiers are operational attribution, not credentials.
+
+## Readiness before mutation
+
+Use the readiness routes before an operator action:
+
+```text
+POST /v1/delivery/history/{attempt_id}/replay-readiness
+POST /v1/delivery/history/{attempt_id}/retry-now-readiness
+POST /v1/delivery/history/{attempt_id}/dlq-drain-readiness
+```
+
+Readiness responses are read-only. They do not reserve or execute an action.
+
+A readiness result explains:
+
+- whether the action is allowed;
+- the action name;
+- a machine-readable reason code;
+- a safe human-readable reason;
+- a sanitized attempt summary.
+
+Possible blockers include:
+
+```text
+not_failed
+replay_created_attempt
+already_terminal
+not_dlq
+not_terminal
+retry_claim_active
+channel_missing
+channel_disabled
+unsupported_channel_type
+unsupported_delivery_kind
+destination_configuration_invalid
+retry_policy_exhausted
+dlq_drain_created_attempt
+dlq_drain_claim_active
+already_drained
+```
+
+The execution endpoint rechecks state. A previously allowed readiness result is not a reservation.
+
+## Replay
+
+Replay creates a new Delivery attempt linked to the failed source attempt.
+
+```text
+POST /v1/delivery/history/{attempt_id}/replay
+```
+
+Replay requires `delivery:replay`.
+
+Eligibility requires:
+
+- a failed source attempt;
+- a supported delivery kind;
+- an existing channel;
+- an enabled channel;
+- a supported channel type;
+- a valid stored destination configuration.
+
+The currently supported replay kinds are:
+
+```text
+test
+rule_match
+```
+
+Only one replay can be created for a source attempt. A duplicate replay returns HTTP `409` with structured detail such as:
+
+```json
+{
+  "detail": {
+    "code": "duplicate_replay",
+    "reason": "This delivery attempt has already been replayed.",
+    "replay_attempt_id": "REPLAY_ATTEMPT_UUID"
+  }
+}
+```
+
+The replay response contains the source attempt identifier, the new replay attempt, and a replay audit.
+
+## Retry now
+
+Retry Now immediately executes an eligible retry and records a retry audit.
+
+```text
+POST /v1/delivery/history/{attempt_id}/retry-now
+```
+
+It requires `delivery:retry_now`.
+
+The action uses a short operator claim to avoid concurrent execution. The current manual claim duration is 300 seconds.
+
+A response can report:
+
+```json
+{
+  "executed": false,
+  "source_attempt_id": "DELIVERY_ATTEMPT_UUID",
+  "readiness": {
+    "allowed": false,
+    "action": "retry_now",
+    "reason_code": "channel_disabled",
+    "reason": "The notification channel is disabled.",
+    "attempt": {}
+  }
+}
+```
+
+When executed, the response also contains the resulting attempt state and retry audit.
+
+Retry Now is distinct from replay:
+
+- Retry Now acts within retry handling for the attempt.
+- Replay creates a separately linked Delivery attempt.
+
+## DLQ drain
+
+DLQ drain creates a new recovery attempt linked to a terminal DLQ source attempt.
+
+```text
+POST /v1/delivery/history/{attempt_id}/dlq-drain
+```
+
+It requires `delivery:dlq_drain`, which is currently available to admins and owners.
+
+The action uses a reservation and audit record to prevent duplicate drains.
+
+The response contains:
+
+- action and execution status;
+- original attempt identifier;
+- created attempt identifier;
+- audit identifier;
+- Delivery status;
+- reason code and safe reason;
+- response code when available;
+- creation and completion timestamps.
+
+DLQ drain is distinct from both replay and Retry Now. It preserves DLQ lineage rather than rewriting the original attempt.
+
+## Alert destinations
+
+Alert destinations are managed through:
+
+```text
+GET    /v1/alert-destinations
+POST   /v1/alert-destinations
+PATCH  /v1/alert-destinations/{destination_id}
+DELETE /v1/alert-destinations/{destination_id}
+
+POST   /v1/alert-destinations/{destination_id}/enable
+POST   /v1/alert-destinations/{destination_id}/disable
+POST   /v1/alert-destinations/{destination_id}/test
+```
+
+The project can be resolved from the request body, query parameter, or authorized context. A missing project context returns HTTP `422`.
+
+Current alert delivery supports webhook and Slack destinations. Project-wide alert fanout selects enabled webhook destinations; rule-linked fanout can select enabled webhook and Slack destinations.
+
+## Create an alert webhook destination
+
+Example:
+
+```bash
+curl --silent --show-error \
+  --request POST \
+  "${LARIBA_API_BASE_URL}/v1/alert-destinations?project_id=${LARIBA_PROJECT_ID}" \
+  --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "type": "webhook",
+    "name": "Incident receiver",
+    "target_url": "https://alerts.example.com/lariba",
+    "secret": "SHARED_SIGNING_SECRET",
+    "is_enabled": true
+  }'
+```
+
+The secret is optional. When present, Lariba Cloud encrypts it before storage.
+
+The response exposes:
+
+```json
+{
+  "id": "DESTINATION_UUID",
+  "project_id": "PROJECT_UUID",
+  "type": "webhook",
+  "name": "Incident receiver",
+  "target_url": "https://alerts.example.com/lariba",
+  "has_secret": true,
+  "is_enabled": true,
+  "created_at": "2026-07-24T20:00:00Z",
+  "updated_at": "2026-07-24T20:00:00Z"
+}
+```
+
+The secret value is not returned. `has_secret` indicates whether signing is configured.
+
+## Alert webhook payload
+
+Alert webhook delivery serializes a compact JSON object containing:
+
+```json
+{
+  "alert_event_id": "ALERT_EVENT_UUID",
+  "alert_rule_id": "ALERT_RULE_UUID",
+  "project_id": "PROJECT_UUID",
+  "event_id": "EVENT_REFERENCE",
+  "event_type": "payment.failed",
+  "source": "checkout-service",
+  "severity": "critical",
+  "status": "triggered",
+  "message": "Payment failure threshold exceeded",
+  "payload": {
+    "failure_count": 12
+  },
+  "created_at": "2026-07-24T20:00:00+00:00"
+}
+```
+
+Fields can be null when the underlying alert event does not provide them.
+
+## Alert signing headers
+
+Alert webhooks include:
+
+```text
+Content-Type: application/json
+User-Agent: Lariba-Cloud-Alerts/1.0
+X-Lariba-Timestamp: UNIX_SECONDS
+```
+
+When the destination has a secret, Lariba Cloud also sends:
+
+```text
+X-Lariba-Signature: COMPUTED_SIGNATURE
+```
+
+The signature is computed from the configured secret, the timestamp, and the exact serialized request body. The shared secret itself is never sent as the signature.
+
+Receiver guidance:
+
+1. read the raw request body before parsing JSON;
+2. require `X-Lariba-Timestamp`;
+3. reject timestamps outside the receiver’s accepted tolerance;
+4. compute the expected signature using the documented Lariba signing contract;
+5. compare signatures in constant time;
+6. reject the request before processing when verification fails;
+7. apply receiver-side idempotency using a stable alert identifier.
+
+The current extracted OpenAPI contract does not define the signature algorithm as a public schema field. Do not invent an incompatible verifier from the header name alone.
+
+## Test an alert destination
+
+```text
+POST /v1/alert-destinations/{destination_id}/test
+```
+
+The test:
+
+- validates the destination again;
+- signs the body when a secret exists;
+- uses a ten-second timeout;
+- does not follow redirects;
+- treats HTTP 2xx as success;
+- returns destination metadata and a bounded provider response.
+
+A transport failure can return HTTP `502` with sanitized structured detail.
+
+A private or metadata-service target is rejected before the HTTP request is sent.
+
+## Alert delivery retries
+
+Normal alert-event delivery uses a five-second timeout and does not follow redirects.
+
+Success is HTTP 2xx.
+
+Retryable alert results include:
+
+```text
+408
+409
+425
+429
+5xx
+```
+
+A transport exception with an error message is also retryable.
+
+The alert retry policy currently uses:
+
+| Setting | Value |
+| --- | ---: |
+| Base delay | 30 seconds |
+| Maximum retry count | 5 |
+| Strategy | Exponential |
+
+For HTTP `429`, a valid upstream `Retry-After` value is used. It can be delta seconds or an HTTP date.
+
+Without a valid `Retry-After`, the schedule uses exponential delays:
+
+```text
+30 seconds
+60 seconds
+120 seconds
+240 seconds
+```
+
+At the maximum retry count, the alert delivery becomes failed and no next retry is scheduled.
+
+An outbound URL safety failure is terminal and is not retried.
+
+## Delivery channels versus alert destinations
+
+| Concern | Delivery channel | Alert destination |
+| --- | --- | --- |
+| API prefix | `/v1/delivery` | `/v1/alert-destinations` |
+| Main trigger | Channel test or rule-match Delivery | Alert event |
+| Types | Email and webhook | Webhook and Slack |
+| Secret model | Multiple write-only protected headers | Optional encrypted signing secret |
+| Outbound methods | POST, PUT, or PATCH | POST |
+| Standard signing | Customer-defined through protected headers | `X-Lariba-Timestamp` and optional `X-Lariba-Signature` |
+| Retry evidence | Delivery attempts and retry audits | Alert delivery records |
+| Operator recovery | Replay, Retry Now, and DLQ drain | Background alert retry |
+| RBAC | Delivery capability matrix | Project membership |
+
+Do not configure the same endpoint in both systems unless duplicate notifications are intentional.
+
+## Stripe webhook distinction
+
+The Stripe webhook is an inbound billing endpoint:
+
+```text
+POST /v1/stripe/webhook
+```
+
+It is not a Delivery channel and cannot be managed through the Delivery or Alert Destination APIs.
+
+Stripe signs the raw request body using:
+
+```text
+Stripe-Signature
+```
+
+Lariba Cloud verifies that signature with the configured Stripe webhook secret, persists the Stripe event identifier, and applies duplicate-event protection.
+
+See the Billing Guide for Stripe lifecycle events and configuration.
+
+## Error handling
+
+Common webhook-management and delivery statuses include:
+
+| Status | Typical meaning |
+| --- | --- |
+| `400` | Invalid inbound Stripe signature or malformed webhook input |
+| `401` | Bearer authentication is missing or invalid |
+| `403` | Project access or Delivery capability is insufficient |
+| `404` | Project-scoped channel, destination, or attempt is unavailable |
+| `409` | Duplicate protected header, evidence-preserving deletion block, duplicate replay, or duplicate DLQ action |
+| `422` | Invalid configuration, URL, method, header, identifier, filter, or readiness input |
+| `502` | Destination test or upstream delivery operation failed |
+| `503` | Protected credential or secret cryptography is unavailable |
+
+OpenAPI primarily enumerates successful and validation responses for several routes. Runtime authorization, conflict, upstream, and cryptographic failures remain part of the operational contract.
+
+## Production receiver checklist
+
+Before accepting Lariba Cloud webhooks:
+
+1. expose a public HTTPS endpoint;
+2. reject unexpected methods and content types;
+3. authenticate Delivery webhooks with a protected header or equivalent receiver control;
+4. verify alert webhook signatures when a destination secret is configured;
+5. validate timestamps and use constant-time signature comparison;
+6. process requests idempotently;
+7. return a 2xx response only after the receiver has safely accepted the message;
+8. keep response bodies concise and free of credentials;
+9. respond within the applicable timeout;
+10. use `429` and `Retry-After` deliberately when asking alert delivery to retry;
+11. avoid redirects;
+12. never place secrets in the destination URL;
+13. log Lariba identifiers rather than full sensitive payloads;
+14. monitor failed, retryable, exhausted, and DLQ states;
+15. test replay, Retry Now, and DLQ procedures before an incident.
+
+## Production sender checklist
+
+Before enabling an outbound webhook:
+
+1. use the minimum required project role;
+2. validate the destination belongs to the intended tenant;
+3. use protected headers for credentials;
+4. rotate destination credentials through the protected-header route;
+5. disable a compromised channel before investigation;
+6. preserve channels that already have Delivery evidence;
+7. inspect readiness before recovery actions;
+8. distinguish replay, Retry Now, and DLQ drain;
+9. review sanitized history and retry audits;
+10. verify the persistent workers are healthy;
+11. keep test destinations separate from production where practical;
+12. never copy plaintext credentials into logs or support tickets.
+
+## Related documentation
+
+- [API Reference Overview](/reference/overview)
+- [Events API](/reference/events)
+- [Event Ingestion](/guides/event-ingestion)
+- [Authentication](/authentication)
+- [Organizations and Projects](/concepts/orgs-projects)
+- [Errors](/concepts/errors)
+- [Rate Limits](/concepts/rate-limits)
+- [Billing Guide](/guides/billing)
+- [Worker Health and Recovery](/operations/worker-health-and-recovery)

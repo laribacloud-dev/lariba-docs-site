@@ -1,0 +1,328 @@
+# Errors
+
+Lariba Cloud uses HTTP status codes together with JSON response bodies to describe failed requests.
+
+Most route-level failures use a top-level `detail` field. The value of `detail` is not always a string: some APIs return a structured object, while request-validation failures return an array of validation entries.
+
+Clients should therefore parse error responses defensively.
+
+## Error shapes
+
+### String detail
+
+Many authentication, authorization, lookup, and conflict failures use a string:
+
+```json
+{
+  "detail": "Invalid credentials"
+}
+```
+
+Other current examples include:
+
+- `Missing X-API-Key`;
+- `Invalid API key`;
+- `Not authenticated`;
+- `Not an organization member`;
+- `Project permission required`;
+- `API key not found`;
+- `Slug already exists`;
+- `Idempotency-Key request is already in progress`.
+
+Do not build application logic around the exact wording unless the endpoint contract explicitly requires it.
+
+### Structured detail
+
+Some operational APIs return an object inside `detail`:
+
+```json
+{
+  "detail": {
+    "code": "duplicate_replay",
+    "reason": "This delivery attempt has already been replayed.",
+    "replay_attempt_id": "DELIVERY_ATTEMPT_UUID"
+  }
+}
+```
+
+Structured fields vary by feature. Current examples can include:
+
+- `code`;
+- `message`;
+- `reason`;
+- `missing_requirements`;
+- `replay_attempt_id`;
+- quota or plan metadata.
+
+Use a documented machine-readable `code` when present. Preserve the remaining object for diagnostics and user-facing context.
+
+### Validation detail
+
+Request and parameter validation failures commonly return HTTP `422` with a `detail` array:
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "event_type"],
+      "msg": "Field required",
+      "input": {
+        "source": "checkout-service"
+      }
+    }
+  ]
+}
+```
+
+The generated OpenAPI validation envelope is:
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "field_name"],
+      "msg": "Validation message",
+      "type": "validation_type"
+    }
+  ]
+}
+```
+
+Validation entries identify where the problem occurred and why the value was rejected. The exact entry fields can vary with the validation failure.
+
+### Specialized responses
+
+Some flows use a dedicated response schema instead of the generic `detail` envelope.
+
+For example, a sign-in that requires a second factor returns HTTP `401` with MFA challenge metadata:
+
+```json
+{
+  "detail": "Two-factor authentication required.",
+  "two_factor_required": true,
+  "mfa_required": true,
+  "challenge_token": "MFA_CHALLENGE_TOKEN",
+  "preferred_method": "totp",
+  "available_methods": ["totp", "passkey"],
+  "expires_in": 300
+}
+```
+
+Treat the endpoint’s documented response model as authoritative.
+
+## HTTP status codes
+
+The following status codes are used across the current Lariba Cloud APIs.
+
+| Status | Meaning | Typical examples |
+| --- | --- | --- |
+| `400` | The request is understood but cannot be processed as supplied | Invalid verification link, invalid identifier, incompatible action parameters |
+| `401` | Authentication is missing, invalid, expired, or incomplete | Invalid credentials, invalid token, missing API key, MFA challenge |
+| `403` | The identity is known but is not permitted to perform the action | Missing scope, insufficient role, disabled source, billing gate |
+| `404` | The requested resource is not available in the authorized scope | Project, API key, member, channel, or attempt not found |
+| `409` | The request conflicts with current resource or workflow state | Duplicate slug, immutable owner, duplicate replay, idempotency conflict |
+| `413` | The submitted payload is too large for the applicable limit | File exceeds the current plan’s upload limit |
+| `422` | Request structure, field value, query parameter, or business validation failed | Missing required field, unsupported value, invalid scope string |
+| `500` | An unexpected internal or configuration failure occurred | Internal processing failure |
+| `502` | An upstream or destination operation failed | Webhook or provider request failed |
+| `503` | A required subsystem is temporarily unavailable | Passkey provider, protected credentials, storage, or cryptographic service unavailable |
+
+The OpenAPI document automatically lists HTTP `422` validation responses for many operations. Runtime code can also return other documented status codes even when they are not enumerated on every generated OpenAPI operation.
+
+## Authentication and authorization errors
+
+### Human authentication
+
+Protected human-user endpoints use Bearer access tokens.
+
+A missing or invalid access token generally returns HTTP `401`:
+
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+```json
+{
+  "detail": "Invalid token"
+}
+```
+
+Invalid login credentials also return HTTP `401`:
+
+```json
+{
+  "detail": "Invalid credentials"
+}
+```
+
+An account that still requires email verification can return HTTP `403`.
+
+### API-key authentication
+
+Machine-facing endpoints can use `X-API-Key`.
+
+Common ingestion authentication responses include:
+
+| Status | Detail |
+| --- | --- |
+| `401` | `Missing X-API-Key` |
+| `401` | `Invalid API key` |
+| `401` | `API key revoked` |
+| `401` | `API key expired` |
+| `403` | `Source API key revoked` |
+| `403` | Missing required scope |
+| `403` | Browser-safe key constraint failed |
+
+A source-linked key or browser-safe key can produce more specific `403` messages when its source, origin, endpoint, or event-type restrictions are not satisfied.
+
+### Tenant isolation
+
+Authorization failures are not proof that a resource exists.
+
+Some cross-tenant lookups intentionally return HTTP `404` with a sanitized not-found response. Do not use differences between `403` and `404` to infer another tenant’s resource inventory.
+
+## Conflict errors
+
+HTTP `409` indicates that the submitted request conflicts with current state.
+
+Examples include:
+
+- an organization or project slug already exists;
+- the organization owner role is immutable;
+- the organization owner cannot be removed;
+- API-key bootstrap is attempted after keys already exist;
+- an idempotency key is reused for another request;
+- an idempotent request is still in progress;
+- a Delivery replay or DLQ action has already been claimed or completed;
+- a notification channel cannot be deleted while Delivery evidence exists.
+
+A conflict normally requires state inspection or a different operation, not an immediate blind retry.
+
+## Idempotency errors
+
+Event ingestion can return HTTP `409` when:
+
+- the same `Idempotency-Key` is used with a different normalized request;
+- another request with that key is still in progress.
+
+For retries of the same logical event:
+
+1. keep the same idempotency key;
+2. keep the normalized request unchanged;
+3. wait before retrying an in-progress conflict;
+4. do not generate a new key merely to bypass the conflict.
+
+## Billing and quota errors
+
+Ingestion billing gates currently use HTTP `403` with a string `detail` and additional response headers.
+
+Relevant headers can include:
+
+- `X-Lariba-Upgrade-URL`;
+- `X-Lariba-Billing-Status`;
+- `X-Lariba-Block-Reason`;
+- limit and usage metadata.
+
+Possible block reasons include inactive billing and exceeded monthly limits.
+
+Storage and metered-billing APIs can return structured error objects with fields such as `code`, `message`, plan information, limits, remaining capacity, or projected cost.
+
+## Parsing errors safely
+
+A client should accept string, object, and array values for `detail`.
+
+```ts
+type LaribaErrorBody = {
+  detail?: unknown
+  [key: string]: unknown
+}
+
+export function describeLaribaError(body: LaribaErrorBody): string {
+  const { detail } = body
+
+  if (typeof detail === "string") {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((entry) => {
+        if (
+          entry &&
+          typeof entry === "object" &&
+          "msg" in entry &&
+          typeof entry.msg === "string"
+        ) {
+          return entry.msg
+        }
+
+        return "Request validation failed"
+      })
+      .join("; ")
+  }
+
+  if (detail && typeof detail === "object") {
+    if (
+      "message" in detail &&
+      typeof detail.message === "string"
+    ) {
+      return detail.message
+    }
+
+    if (
+      "reason" in detail &&
+      typeof detail.reason === "string"
+    ) {
+      return detail.reason
+    }
+  }
+
+  return "Lariba Cloud request failed"
+}
+```
+
+Retain the full response body in controlled diagnostic telemetry, but redact credentials, tokens, secrets, protected headers, and sensitive event payloads.
+
+## Retry guidance
+
+Use the status code and operation semantics together.
+
+| Response | Recommended handling |
+| --- | --- |
+| `400` | Correct the request or workflow state before retrying |
+| `401` | Refresh or replace credentials; complete MFA when required |
+| `403` | Check scope, role, source state, browser-key constraints, billing, or quota |
+| `404` | Verify the identifier and authorized tenant context |
+| `409` | Inspect current state; retry only when the conflict is transient |
+| `413` | Reduce payload size or use an applicable upload path or plan |
+| `422` | Correct validation errors before retrying |
+| `500` | Retry cautiously with bounded exponential backoff |
+| `502` | Treat as an upstream failure; retry only when the operation is safe |
+| `503` | Retry later with bounded exponential backoff |
+
+For non-idempotent writes, do not retry automatically unless the endpoint provides idempotency or the client can prove that repeating the operation is safe.
+
+## Client implementation checklist
+
+1. branch on HTTP status before interpreting the body;
+2. parse `detail` as an unknown value;
+3. support string, object, and array error shapes;
+4. use machine-readable `code` fields when documented;
+5. inspect relevant response headers;
+6. preserve idempotency keys across safe retries;
+7. apply bounded exponential backoff only to retryable failures;
+8. avoid exposing credentials or sensitive payloads in logs;
+9. treat `403` and sanitized `404` responses as tenant-boundary controls;
+10. keep endpoint-specific handling for specialized schemas such as MFA challenges.
+
+## Related documentation
+
+- [Authentication](/authentication)
+- [Organizations and Projects](/concepts/orgs-projects)
+- [API Keys](/api-keys)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
+- [Projects API](/reference/projects)

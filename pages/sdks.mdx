@@ -1,0 +1,521 @@
+# SDKs
+
+Lariba Cloud currently has a JavaScript SDK repository, but the checked-in package is not yet aligned with the current public ingestion contract.
+
+For production integrations, use the HTTP API directly until a release-ready SDK package is published and validated against the current API.
+
+## Current availability
+
+| SDK | Status | Recommended use |
+| --- | --- | --- |
+| JavaScript / TypeScript | Developer preview | Repository evaluation only |
+| Python | Not currently available | Use the HTTP API |
+| Other languages | Not currently available | Use the HTTP API |
+
+The JavaScript repository currently identifies itself as:
+
+```text
+name: lariba-sdk
+version: 1.0.0
+module type: CommonJS
+license: ISC
+```
+
+The repository contains:
+
+```text
+README.md
+package.json
+package-lock.json
+src/index.ts
+tsconfig.json
+```
+
+It does not currently contain a checked-in `index.js` or `dist` build output.
+
+## Installation status
+
+The documentation workspace currently references the SDK directly from GitHub:
+
+```bash
+npm install @laribacloud/lariba-sdk-js@github:laribacloud/lariba-sdk-js
+```
+
+The SDK README also shows:
+
+```bash
+npm install @laribacloud/lariba-sdk-js
+```
+
+However, the checked-in SDK package metadata uses the unscoped package name:
+
+```json
+{
+  "name": "lariba-sdk",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs"
+}
+```
+
+The repository snapshot does not establish that a matching scoped package is published to a package registry.
+
+Do not assume that:
+
+```text
+@laribacloud/lariba-sdk-js
+```
+
+is currently available as a conventional registry package.
+
+## Package readiness
+
+The current repository head is not release-ready as a standard package.
+
+The package metadata points to:
+
+```text
+index.js
+```
+
+but the repository contains only:
+
+```text
+src/index.ts
+```
+
+The package does not currently declare:
+
+- a build script;
+- an `exports` map;
+- a `types` entry;
+- a `files` allow-list;
+- a Node.js engine requirement;
+- a repository URL in package metadata;
+- a publish configuration;
+- a working test command.
+
+The declared test script intentionally exits with an error:
+
+```json
+{
+  "test": "echo \"Error: no test specified\" && exit 1"
+}
+```
+
+No SDK test files were found in the extracted repository snapshot.
+
+## Current JavaScript API
+
+The current source exports one class:
+
+```ts
+export class Lariba
+```
+
+Its constructor accepts positional arguments:
+
+```ts
+new Lariba(apiKey, baseUrl?)
+```
+
+The implementation defaults `baseUrl` to:
+
+```text
+http://localhost:8000
+```
+
+The only public method is:
+
+```ts
+track(event, properties?)
+```
+
+Current source shape:
+
+```ts
+const lariba = new Lariba(
+  process.env.LARIBA_API_KEY!,
+  process.env.LARIBA_API_BASE_URL
+)
+
+await lariba.track("user.signup", {
+  plan: "starter"
+})
+```
+
+This example reflects the checked-in constructor signature only. It does not establish compatibility with the current production API.
+
+## Contract mismatch with current ingestion
+
+The checked-in SDK source sends:
+
+```text
+POST {baseUrl}/v1/events
+```
+
+with:
+
+```json
+{
+  "event": "user.signup",
+  "properties": {
+    "plan": "starter"
+  },
+  "timestamp": "CURRENT_ISO_TIMESTAMP"
+}
+```
+
+The current public ingestion contract uses:
+
+```text
+POST /v1/events/ingest
+```
+
+and requires the canonical request fields documented by the Events API, including:
+
+```json
+{
+  "event_type": "user.signup",
+  "source": "application-service",
+  "properties": {
+    "plan": "starter"
+  }
+}
+```
+
+The current SDK source therefore differs from the public ingestion contract in both:
+
+- endpoint path;
+- request-body field names and required fields.
+
+Do not use the current SDK source as a production integration contract.
+
+## Quickstart discrepancy
+
+The current Quickstart shows an object-based constructor:
+
+```ts
+const lariba = new Lariba({
+  apiKey: process.env.LARIBA_API_KEY!
+})
+```
+
+The checked-in source defines a positional constructor:
+
+```ts
+constructor(
+  apiKey: string,
+  baseUrl = "http://localhost:8000"
+)
+```
+
+These forms are not equivalent.
+
+Until the SDK implementation and documentation are synchronized, treat the repository source as authoritative for repository evaluation and the HTTP API documentation as authoritative for production requests.
+
+## Current transport behaviour
+
+The SDK source:
+
+1. uses the runtime-provided `fetch` function;
+2. sends `Content-Type: application/json`;
+3. sends the API key in `X-API-Key`;
+4. serializes the event, properties, and current timestamp;
+5. throws a generic JavaScript `Error` when the response is not successful;
+6. parses successful responses as JSON.
+
+The error contains only the HTTP status:
+
+```text
+Lariba API error: STATUS
+```
+
+The current implementation does not expose:
+
+- response body details;
+- structured API validation errors;
+- response headers;
+- rate-limit metadata;
+- billing and quota headers;
+- retry classification;
+- request identifiers;
+- timeout control;
+- cancellation through `AbortSignal`;
+- idempotency-key support;
+- automatic retries;
+- retry backoff;
+- event batching;
+- queueing;
+- flushing;
+- offline persistence;
+- Server-Sent Events support.
+
+## Runtime requirements
+
+The source calls the global `fetch` function directly.
+
+A consumer therefore needs a JavaScript runtime that provides `fetch`, or must supply a compatible global implementation before using the SDK source.
+
+The package metadata does not currently declare a supported Node.js version or browser compatibility matrix.
+
+## Authentication
+
+The SDK sends the supplied credential as:
+
+```text
+X-API-Key: YOUR_API_KEY
+```
+
+Use a project-scoped API key with the required endpoint scope.
+
+For event ingestion, the current API requires:
+
+```text
+events:write
+```
+
+Never place an API key in:
+
+- browser-delivered source code;
+- public environment variables;
+- URLs;
+- event payloads;
+- client-visible logs;
+- screenshots;
+- source-control history.
+
+Use the SDK only in trusted server-side or controlled runtime environments.
+
+## Idempotency
+
+The current SDK does not accept or send:
+
+```text
+Idempotency-Key
+```
+
+The HTTP ingestion API supports idempotency keys for deterministic retries.
+
+A production SDK should allow callers to provide one stable key for one logical request and preserve that key when retrying the same normalized payload.
+
+Until the SDK adds this capability, use the HTTP API directly when idempotent ingestion is required.
+
+Example:
+
+```bash
+curl --request POST   "${LARIBA_API_BASE_URL}/v1/events/ingest"   --header "Content-Type: application/json"   --header "X-API-Key: $LARIBA_SOURCE_API_KEY"   --header "Idempotency-Key: user-signup-9841"   --data '{
+    "event_type": "user.signup",
+    "source": "account-service",
+    "event_id": "user-signup-9841",
+    "properties": {
+      "plan": "starter"
+    }
+  }'
+```
+
+## Error handling
+
+The HTTP API can return more information than the current SDK exposes.
+
+Relevant statuses can include:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Request or billing context is invalid |
+| `401` | API key is missing, invalid, expired, or revoked |
+| `403` | Scope, source, project, browser constraint, or billing enforcement failed |
+| `409` | Idempotency conflict or concurrent request |
+| `413` | Request body is too large |
+| `422` | Request validation failed |
+| `429` | A rate limit or daily ingestion limit was reached |
+| `500` | Internal processing failed |
+| `503` | A required service is unavailable |
+
+A production SDK should preserve:
+
+- HTTP status;
+- response body;
+- `Retry-After`;
+- `X-RateLimit-*`;
+- `X-Lariba-*` operational headers.
+
+The current implementation discards those details when it throws.
+
+## Retry guidance
+
+Do not blindly retry every failure.
+
+| Status or condition | Default client action |
+| --- | --- |
+| Network interruption | Retry only with a stable idempotency key |
+| `408`, `425`, `429`, transient `5xx` | Consider bounded retry with backoff |
+| `400`, `401`, `403`, `404`, `413`, `422` | Correct configuration or request data |
+| `409` idempotency conflict | Inspect the existing logical request |
+| Billing quota `403` | Follow the returned billing guidance |
+| Rate-limit `429` | Respect `Retry-After` |
+
+The current SDK does not implement this policy automatically.
+
+## Direct HTTP integration
+
+The HTTP API is the supported integration path while the SDK remains in developer preview.
+
+### JavaScript or TypeScript
+
+```ts
+type IngestResponse = {
+  accepted: boolean
+  duplicate?: boolean
+  ingested_event_id?: string
+  external_event_id?: string | null
+}
+
+async function ingestEvent(
+  apiBaseUrl: string,
+  apiKey: string,
+  idempotencyKey: string,
+): Promise<IngestResponse> {
+  const response = await fetch(
+    `${apiBaseUrl}/v1/events/ingest`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify({
+        event_type: "user.signup",
+        source: "account-service",
+        event_id: idempotencyKey,
+        properties: {
+          plan: "starter",
+        },
+      }),
+    },
+  )
+
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(
+      `Lariba Cloud request failed (${response.status}): ${detail}`,
+    )
+  }
+
+  return response.json() as Promise<IngestResponse>
+}
+```
+
+### Python
+
+```python
+from __future__ import annotations
+
+import os
+import requests
+
+api_base_url = os.environ["LARIBA_API_BASE_URL"]
+api_key = os.environ["LARIBA_SOURCE_API_KEY"]
+idempotency_key = "user-signup-9841"
+
+response = requests.post(
+    f"{api_base_url}/v1/events/ingest",
+    headers={
+        "Content-Type": "application/json",
+        "X-API-Key": api_key,
+        "Idempotency-Key": idempotency_key,
+    },
+    json={
+        "event_type": "user.signup",
+        "source": "account-service",
+        "event_id": idempotency_key,
+        "properties": {
+            "plan": "starter",
+        },
+    },
+    timeout=10,
+)
+
+response.raise_for_status()
+result = response.json()
+```
+
+These examples use the documented HTTP contract rather than the current SDK implementation.
+
+## Release-readiness requirements
+
+Before the JavaScript SDK should be presented as production-ready, it should have:
+
+1. a package name aligned with its documented import path;
+2. a build command that emits JavaScript and declaration files;
+3. valid `main`, `exports`, and `types` package entries;
+4. an explicit supported-runtime matrix;
+5. the canonical `/v1/events/ingest` endpoint;
+6. canonical ingestion request and response types;
+7. configurable API base URL without a localhost production default;
+8. idempotency-key support;
+9. structured errors preserving body and headers;
+10. bounded timeout and cancellation support;
+11. documented retry behaviour;
+12. automated unit and contract tests;
+13. a successful package validation command;
+14. registry or immutable-revision installation instructions;
+15. versioned release notes.
+
+## Versioning boundary
+
+The SDK repository reports version:
+
+```text
+1.0.0
+```
+
+That package version does not prove compatibility with every current Lariba Cloud API operation.
+
+The current API snapshot reports:
+
+```text
+Lariba Cloud API 1.0.0
+```
+
+SDK and API versions must be evaluated independently until compatibility guarantees are formally defined.
+
+## OpenAPI boundary
+
+The current OpenAPI document:
+
+- does not declare a `servers` array;
+- does not model `X-API-Key` as a separate security scheme;
+- can omit runtime authentication and middleware behaviour;
+- does not enumerate every rate-limit, billing, or workflow response.
+
+SDK generation or manual SDK implementation must therefore use the OpenAPI document together with endpoint documentation and runtime contract tests.
+
+## Current recommendation
+
+For production applications:
+
+1. call the HTTP API directly;
+2. use `X-API-Key` only where endpoint documentation permits it;
+3. use Bearer access tokens for human-user APIs;
+4. use the canonical `/v1/events/ingest` route;
+5. send canonical request fields;
+6. add a stable `Idempotency-Key` for retryable ingestion;
+7. preserve structured errors and operational headers;
+8. implement bounded timeouts;
+9. retry only classified transient failures;
+10. keep credentials out of client-visible code and logs.
+
+Use the JavaScript SDK repository only for controlled evaluation until its implementation, package metadata, tests, and documentation are synchronized.
+
+## Related documentation
+
+- [Quickstart](/quickstart)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Errors](/concepts/errors)
+- [Rate Limits](/concepts/rate-limits)
+- [API Reference Overview](/reference/overview)

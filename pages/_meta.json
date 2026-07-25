@@ -2,12 +2,14 @@
   "index": "Introduction",
   "quickstart": "Quickstart",
 
-  "concepts": "Concepts",
-  "guides": "Guides",
-  "operations": "Operations",
-  "reference": "Reference",
-
   "authentication": "Authentication",
+  "api-keys": "API Keys",
   "sdks": "SDKs",
+
+  "guides": "Guides",
+  "concepts": "Concepts",
+  "operations": "Operations",
+  "reference": "API Reference",
+
   "changelog": "Changelog"
 }

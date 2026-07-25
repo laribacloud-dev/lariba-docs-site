@@ -1,0 +1,482 @@
+# Usage API
+
+The Usage API exposes project event totals, project daily event counts, and current organization-level event usage.
+
+The current public routes are:
+
+```text
+GET /v1/usage
+GET /v1/usage/current
+GET /v1/projects/{project_id}/usage/daily
+```
+
+These endpoints answer different questions:
+
+| Endpoint | Scope | Primary result |
+| --- | --- | --- |
+| `GET /v1/usage` | Project | Event totals grouped by event name for a selected period |
+| `GET /v1/projects/{project_id}/usage/daily` | Project | Event counts grouped by calendar date |
+| `GET /v1/usage/current` | Organization containing the API-key project | Current UTC-month event usage and an explicitly configured monthly limit |
+
+## Authentication
+
+The endpoints use two authentication models.
+
+| Endpoint | Authentication | Required access |
+| --- | --- | --- |
+| `GET /v1/usage` | Bearer access token | Membership in the selected project’s organization |
+| `GET /v1/projects/{project_id}/usage/daily` | Bearer access token | Membership in the selected project’s organization |
+| `GET /v1/usage/current` | `X-API-Key` | API key with `events:read` |
+
+Bearer header:
+
+```text
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+API-key header:
+
+```text
+X-API-Key: YOUR_API_KEY
+```
+
+### OpenAPI discrepancy for current usage
+
+The current OpenAPI snapshot shows the `X-API-Key` header as optional and does not attach an explicit security requirement to `GET /v1/usage/current`.
+
+The runtime dependency requires an API key with the `events:read` scope. Client implementations must follow the runtime authentication requirement.
+
+## Project usage summary
+
+```text
+GET /v1/usage
+```
+
+This endpoint counts project events inside a selected time period and groups them by event name.
+
+### Query parameters
+
+| Parameter | Type | Required | Default | Constraints |
+| --- | --- | --- | --- | --- |
+| `project_id` | UUID | Yes | — | Accessible project |
+| `period` | String | No | `30d` | `24h`, `7d`, `30d`, or `month` |
+
+### Period semantics
+
+| Value | Time window |
+| --- | --- |
+| `24h` | Rolling previous 24 hours |
+| `7d` | Rolling previous 7 days |
+| `30d` | Rolling previous 30 days |
+| `month` | Start of the current UTC month through the start of the next UTC month |
+
+The query uses an inclusive lower bound and an exclusive upper bound:
+
+```text
+event_time >= from_ts
+event_time < to_ts
+```
+
+For `month`, `to_ts` is the first instant of the following month rather than the current request time.
+
+### Example request
+
+```bash
+curl --silent --show-error   --get   "${LARIBA_API_BASE_URL}/v1/usage"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --data-urlencode "project_id=$LARIBA_PROJECT_ID"   --data-urlencode "period=30d"
+```
+
+### Response
+
+```json
+{
+  "project_id": "PROJECT_UUID",
+  "project_name": "Checkout Production",
+  "period": "30d",
+  "from_ts": "2026-06-24T20:00:00+00:00",
+  "to_ts": "2026-07-24T20:00:00+00:00",
+  "total_events": 1420,
+  "by_event": [
+    {
+      "event": "order.completed",
+      "total": 920
+    },
+    {
+      "event": "payment.failed",
+      "total": 500
+    }
+  ]
+}
+```
+
+### Response fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `project_id` | String | Selected project identifier |
+| `project_name` | String | Selected project name |
+| `period` | String | Applied period |
+| `from_ts` | String | Inclusive UTC lower bound |
+| `to_ts` | String | Exclusive UTC upper bound |
+| `total_events` | Integer | Sum of all grouped event totals |
+| `by_event` | Array | Event names and their counts |
+
+The `by_event` array is ordered by count in descending order.
+
+The endpoint does not currently return pagination metadata because it returns grouped aggregate rows rather than individual events.
+
+### Event-column fallbacks
+
+The runtime resolves the event time column using:
+
+```text
+timestamp
+created_at
+```
+
+It resolves the event-name column using:
+
+```text
+event
+type
+```
+
+The first available field is used. A missing time or event-name column produces an internal server error rather than an incomplete result.
+
+## Project daily usage
+
+```text
+GET /v1/projects/{project_id}/usage/daily
+```
+
+This endpoint groups project events by database calendar date.
+
+### Path parameter
+
+| Parameter | Type | Required |
+| --- | --- | --- |
+| `project_id` | UUID | Yes |
+
+### Query parameter
+
+| Parameter | Type | Required | Default | Constraints |
+| --- | --- | --- | --- | --- |
+| `days` | Integer | No | `30` | Minimum `1`, maximum `365` |
+
+### Example request
+
+```bash
+curl --silent --show-error   --get   "${LARIBA_API_BASE_URL}/v1/projects/${LARIBA_PROJECT_ID}/usage/daily"   --header "Authorization: Bearer $LARIBA_ACCESS_TOKEN"   --data-urlencode "days=30"
+```
+
+### Response
+
+```json
+{
+  "project_id": "PROJECT_UUID",
+  "usage": [
+    {
+      "date": "2026-07-22",
+      "events": 84
+    },
+    {
+      "date": "2026-07-23",
+      "events": 102
+    },
+    {
+      "date": "2026-07-24",
+      "events": 61
+    }
+  ]
+}
+```
+
+### Daily-result behaviour
+
+The runtime:
+
+1. calculates a rolling lower bound from the current UTC time minus `days`;
+2. filters events for the selected project;
+3. groups matching rows by calendar date;
+4. orders dates in ascending order;
+5. returns only dates represented by matching event rows.
+
+The response does not currently zero-fill dates that have no events.
+
+The endpoint resolves the event time column by preferring `timestamp` and falling back to `created_at`.
+
+## Current organization usage
+
+```text
+GET /v1/usage/current
+```
+
+This endpoint is intended for machine integrations that need current-month event usage.
+
+It derives the organization from the project attached to the authenticated API key.
+
+### Required scope
+
+The API key must include:
+
+```text
+events:read
+```
+
+### Example request
+
+```bash
+curl --silent --show-error   --request GET   "${LARIBA_API_BASE_URL}/v1/usage/current"   --header "X-API-Key: $LARIBA_API_KEY"
+```
+
+### Response
+
+```json
+{
+  "organization_id": "ORGANIZATION_UUID",
+  "month": "2026-07",
+  "from_day": "2026-07-01",
+  "to_day": "2026-08-01",
+  "reset_day": "2026-08-01",
+  "events_used": 8240,
+  "events_limit": 10000,
+  "events_remaining": 1760
+}
+```
+
+### Response fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `organization_id` | String | Organization containing the authenticated API-key project |
+| `month` | String | Current UTC month in `YYYY-MM` format |
+| `from_day` | String | First day of the current UTC month |
+| `to_day` | String | First day of the following UTC month |
+| `reset_day` | String | Current usage reset boundary |
+| `events_used` | Integer | Sum of metered events across organization projects for the current month |
+| `events_limit` | Integer or null | Explicit `events_per_month_limit` value stored on the organization |
+| `events_remaining` | Integer or null | Non-negative difference between the explicit limit and usage |
+
+The current-month query includes usage rows where:
+
+```text
+day >= from_day
+day < to_day
+```
+
+Usage is aggregated across every project belonging to the organization, not only the project associated with the requesting API key.
+
+### Null-limit semantics
+
+When the organization does not have an explicit `events_per_month_limit` value:
+
+```json
+{
+  "events_limit": null,
+  "events_remaining": null
+}
+```
+
+A null value in this response does not by itself prove that the organization has an unlimited commercial plan.
+
+The billing layer can resolve effective limits from plan defaults or organization overrides. The current usage endpoint reads only the organization’s explicit `events_per_month_limit` field and does not call the effective plan-limit resolver.
+
+Clients should use billing status and enforcement responses when they need authoritative commercial quota information.
+
+## Usage storage model
+
+Daily metering is stored in `usage_daily`.
+
+Its composite identity includes:
+
+```text
+day
+project_id
+api_key_id
+```
+
+The model records:
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `day` | Date | UTC usage day |
+| `project_id` | UUID | Project scope |
+| `api_key_id` | UUID or null | API-key scope where available |
+| `requests` | Integer | Metered successful API-key requests |
+| `events_ingested` | Integer | Metered ingested events |
+| `updated_at` | Date-time | Last update time |
+
+`GET /v1/usage/current` reads `events_ingested`. It does not return the stored `requests` counter.
+
+`GET /v1/usage` and the project daily endpoint query event records directly rather than reading aggregate rows from `usage_daily`.
+
+## Request-metering behaviour
+
+The usage-metering middleware tracks API-key request usage.
+
+A request is eligible for a request increment when:
+
+1. usage metering is enabled;
+2. the request supplies `X-API-Key`;
+3. the key resolves to an API-key record;
+4. the response status is below `400`;
+5. the request was not already metered by another path.
+
+The request increment happens after the successful response has been produced.
+
+Requests without `X-API-Key` are not counted by this middleware. This includes ordinary Bearer-authenticated dashboard requests.
+
+### Bypassed paths
+
+The middleware bypasses:
+
+```text
+/v1/stripe/webhook
+/health
+/docs
+/redoc
+/openapi.json
+```
+
+### Failure tolerance
+
+When usage tables are missing in a transitional database state, the middleware is designed not to break the underlying API request.
+
+This fail-open behaviour applies to metering availability. It does not disable authentication, authorization, billing enforcement, or ingestion quota checks.
+
+## Reporting versus enforcement
+
+Usage reporting and quota enforcement are related but separate concerns.
+
+### Reporting
+
+The endpoints in this reference return:
+
+- event aggregates from event records;
+- daily event counts from event records;
+- current-month metered event totals from `usage_daily`.
+
+### Enforcement
+
+Ingestion enforcement can reject requests based on:
+
+- billing state;
+- monthly event quota;
+- monthly request quota;
+- plan or organization configuration.
+
+Quota enforcement can return HTTP `403` with operational headers such as:
+
+```text
+X-Lariba-Block-Reason
+X-Lariba-Monthly-Limit
+X-Lariba-Monthly-Used
+X-Lariba-Monthly-Request-Limit
+X-Lariba-Monthly-Requests-Used
+X-Lariba-Period-Start
+X-Lariba-Period-End
+X-Lariba-Upgrade-URL
+```
+
+Do not interpret an HTTP `403` quota gate as the HTTP `429` sliding-window rate limit.
+
+## Rate limits
+
+The named `usage` sliding-window policy matches:
+
+```text
+GET /v1/usage
+GET /v1/usage/current
+```
+
+Its current defaults are:
+
+| Window | IP limit | Credential limit | Bucket scope |
+| --- | ---: | ---: | --- |
+| 60 seconds | 10 | 20 | Credential, with IP fallback |
+
+Relevant headers include:
+
+```text
+X-RateLimit-Policy
+X-RateLimit-Limit
+X-RateLimit-Remaining
+X-RateLimit-Reset
+Retry-After
+```
+
+A blocked request returns:
+
+```json
+{
+  "detail": "Rate limit exceeded"
+}
+```
+
+The named `usage` rule matches the `/v1/usage` prefix. The project daily route is under `/v1/projects`, so it is outside that specific prefix rule.
+
+This does not guarantee that the daily route can never be protected by another runtime control.
+
+## Errors
+
+The OpenAPI snapshot explicitly lists successful `200` and validation `422` responses. Runtime authentication, authorization, quota, rate-limit, and integrity checks can produce additional statuses.
+
+| Status | Typical meaning |
+| --- | --- |
+| `400` | The API-key project has no organization |
+| `401` | Missing, invalid, expired, or insufficiently scoped authentication |
+| `403` | User lacks authoritative project access or a quota gate blocks an operation |
+| `404` | Project or organization was not found |
+| `422` | Invalid UUID, unsupported period, or invalid `days` constraint |
+| `429` | Named Usage API rate limit exceeded |
+| `500` | Required event time or event-name column is unavailable |
+
+Unsupported project usage period:
+
+```json
+{
+  "detail": "period must be one of: 24h, 7d, 30d, month"
+}
+```
+
+Missing organization on the API-key project:
+
+```json
+{
+  "detail": "Project has no organization"
+}
+```
+
+Missing organization record:
+
+```json
+{
+  "detail": "Organization not found"
+}
+```
+
+Validation failures can use FastAPI’s validation-array response rather than a string `detail`.
+
+## Client guidance
+
+1. use Bearer authentication for project reporting endpoints;
+2. use an API key with `events:read` for current machine usage;
+3. treat the runtime requirement as authoritative where OpenAPI security metadata is incomplete;
+4. use `month` only when calendar-month semantics are required;
+5. remember that `30d` is a rolling window, not the current calendar month;
+6. do not assume the daily response includes zero-event dates;
+7. do not infer unlimited usage from a null `events_limit`;
+8. distinguish event-record aggregates from `usage_daily` metering totals;
+9. distinguish HTTP `403` quota enforcement from HTTP `429` rate limiting;
+10. never log plaintext API keys.
+
+## Related documentation
+
+- [API Reference Overview](/reference/overview)
+- [Projects API](/reference/projects)
+- [Events API](/reference/events)
+- [Event Ingestion](/guides/event-ingestion)
+- [API Keys](/api-keys)
+- [Organizations and Projects](/concepts/orgs-projects)
+- [Errors](/concepts/errors)
+- [Rate Limits](/concepts/rate-limits)
+- [Billing Guide](/guides/billing)

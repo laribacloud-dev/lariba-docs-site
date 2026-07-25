@@ -1,0 +1,167 @@
+# Events API
+
+The Events API accepts source-authenticated operational events and associates them with the project and Event Source represented by the supplied API key.
+
+## Endpoint
+
+`POST /v1/events/ingest`
+
+Use the API base URL configured for the target Lariba Cloud environment:
+
+`$LARIBA_API_BASE_URL/v1/events/ingest`
+
+## Authentication
+
+Send the source API key in the `X-API-Key` header. The key must be active, belong to an enabled Event Source, and include the `events:write` scope.
+
+```text
+X-API-Key: YOUR_SOURCE_API_KEY
+```
+
+Runtime authorization failures include:
+
+| Status | Condition |
+| --- | --- |
+| `401` | The API key is missing or invalid |
+| `403` | The source key is revoked |
+| `403` | The Event Source is disabled |
+| `403` | The key lacks `events:write` |
+
+Do not place source API keys in request bodies, URLs, logs, screenshots, browser bundles, or source control.
+
+## Headers
+
+| Header | Requirement | Description |
+| --- | --- | --- |
+| `Content-Type` | Required | Must be `application/json` |
+| `X-API-Key` | Required at runtime | Authenticates the source and project |
+| `Idempotency-Key` | Optional | Makes retries deterministic |
+
+When supplied, `Idempotency-Key` must contain 1–200 nonblank characters and must identify only one normalized request.
+
+## Request body
+
+```json
+{
+  "event_type": "payment.failed",
+  "source": "checkout-service",
+  "event_id": "payment-attempt-001",
+  "timestamp": "2026-07-24T00:00:00Z",
+  "severity": "critical",
+  "message": "Card authorization was declined",
+  "status": "failed",
+  "environment": "production",
+  "payload": {
+    "reason": "card_declined"
+  },
+  "properties": {
+    "retryable": false
+  }
+}
+```
+
+| Field | Requirement | Constraints | Description |
+| --- | --- | --- | --- |
+| `event_type` | Required | 1–200 characters | Operational event name |
+| `source` | Required | 1–200 characters | Human-readable producer identity |
+| `event_id` | Optional | 1–200 characters | Producer-controlled external identity |
+| `timestamp` | Optional | ISO 8601 date-time | Time reported by the producer |
+| `severity` | Optional | 1–50 characters | Application-defined severity |
+| `message` | Optional | 1–2000 characters | Human-readable message |
+| `status` | Optional | 1–100 characters | Application-defined state |
+| `environment` | Optional | 1–100 characters | Deployment environment |
+| `payload` | Optional | JSON object | Event-specific data |
+| `properties` | Optional | JSON object | Additional event properties |
+
+Lariba Cloud merges `payload` and `properties`. When both objects contain the same key, the value from `properties` takes precedence.
+
+The supplied `event_id` is returned as `external_event_id`. Lariba Cloud also creates an internal `ingested_event_id`.
+
+## Example request
+
+```bash
+curl -X POST "$LARIBA_API_BASE_URL/v1/events/ingest" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_SOURCE_API_KEY" \
+  -H "Idempotency-Key: payment-failed-001" \
+  -d '{
+    "event_type": "payment.failed",
+    "source": "checkout-service",
+    "event_id": "payment-attempt-001",
+    "severity": "critical",
+    "status": "failed",
+    "environment": "production",
+    "payload": {
+      "reason": "card_declined"
+    }
+  }'
+```
+
+## Successful response
+
+A successful request returns HTTP `200`.
+
+```json
+{
+  "accepted": true,
+  "project_id": "PROJECT_ID",
+  "api_key_id": "API_KEY_ID",
+  "ingested_event_id": "INGESTED_EVENT_ID",
+  "external_event_id": "payment-attempt-001",
+  "event_type": "payment.failed",
+  "timestamp": "2026-07-24T00:00:00Z",
+  "properties": {
+    "source": "checkout-service",
+    "severity": "critical",
+    "status": "failed",
+    "environment": "production",
+    "reason": "card_declined",
+    "external_event_id": "payment-attempt-001"
+  },
+  "duplicate": false,
+  "ingest_mode": "async",
+  "persisted_synchronously": false
+}
+```
+
+The response can also include `X-Lariba-Ingest-Mode` and `X-Lariba-Persisted-Synchronously`.
+
+## Idempotency
+
+Lariba Cloud retains ingestion idempotency records for approximately 24 hours.
+
+Reusing the same key with the same normalized request returns the stored response with `duplicate` set to `true`.
+
+Reusing the same key with different request content returns HTTP `409`:
+
+```json
+{
+  "detail": "Idempotency-Key already used with different request payload"
+}
+```
+
+A concurrent request that is still being processed can return HTTP `409`:
+
+```json
+{
+  "detail": "Idempotency-Key request is already in progress"
+}
+```
+
+## Validation errors
+
+| Status | Condition |
+| --- | --- |
+| `422` | A required field is missing or blank |
+| `422` | A string exceeds its maximum length |
+| `422` | `payload` or `properties` is not a JSON object |
+| `422` | `Idempotency-Key` is blank or longer than 200 characters |
+| `409` | An idempotency key conflicts with another request |
+| `429` | The applicable ingestion limit has been exceeded |
+
+## Related documentation
+
+- [Quickstart](/quickstart)
+- [Event Ingestion guide](/guides/event-ingestion)
+- [API Keys](/api-keys)
+- [API Keys reference](/reference/api-keys)

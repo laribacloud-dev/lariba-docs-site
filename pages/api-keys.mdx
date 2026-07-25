@@ -1,0 +1,144 @@
+# API Keys
+
+API keys authenticate machines, Event Sources, and automated producers.
+
+Human users should authenticate with access and refresh tokens instead. See [Authentication](/authentication).
+
+## Request header
+
+Send an API key in the `X-API-Key` header:
+
+```text
+X-API-Key: YOUR_API_KEY
+```
+
+Do not send an API key as a Bearer token.
+
+## Key categories
+
+| Category | Intended use |
+| --- | --- |
+| Project API key | Project-scoped machine access according to configured scopes |
+| Source-linked server key | Server-side ingestion and source operations for one Event Source |
+| Browser-safe source key | Browser ingestion restricted by origins, event types, and a rate limit |
+
+## Source ingestion
+
+A source-linked server key with `events:write` can send operational events to:
+
+```text
+POST /v1/events/ingest
+```
+
+Example:
+
+```bash
+curl --request POST \
+  "$LARIBA_API_BASE_URL/v1/events/ingest" \
+  --header "Content-Type: application/json" \
+  --header "X-API-Key: $LARIBA_API_KEY" \
+  --data '{
+    "event_type": "order.completed",
+    "source": "checkout",
+    "payload": {
+      "order_id": "example-order"
+    }
+  }'
+```
+
+See [Events API](/reference/events) for the complete request and idempotency contract.
+
+## Credential disclosure
+
+Creation and rotation responses can contain the new plaintext credential.
+
+Save it immediately in a managed secret system. Normal list and identity responses expose metadata such as the key prefix, status, timestamps, scope, and source relationship rather than the full credential.
+
+Lariba Cloud stores a key hash for authentication and a non-secret prefix for identification.
+
+## Lifecycle
+
+Use this lifecycle for every key:
+
+1. create the key with the minimum required scope;
+2. copy the plaintext value into a managed secret system;
+3. deploy it only to the intended producer;
+4. monitor status, expiration, and last use;
+5. rotate after suspected exposure or according to policy;
+6. revoke it when the integration is retired.
+
+A revoked or expired key must no longer be treated as usable.
+
+## Source-linked keys
+
+Creating an Event Source can return an associated server key.
+
+Source server keys are created with the ingestion-oriented scopes:
+
+- `events:write`
+- `events:read`
+- `projects:read`
+
+Rotate a source key through:
+
+```text
+POST /v1/ingest-sources/{source_id}/rotate-key
+```
+
+Rotation returns a new credential and indicates whether the previous source key was revoked.
+
+Disabling or archiving a source can also affect whether its linked keys may authenticate successfully.
+
+## Browser-safe keys
+
+Browser-safe keys are designed for constrained client-side ingestion. Their configuration includes:
+
+- allowed origins;
+- allowed event types;
+- an optional per-minute rate limit;
+- source and project association;
+- enabled and revoked state.
+
+Create and manage them under:
+
+```text
+/v1/ingest-sources/{source_id}/browser-keys
+```
+
+A browser-safe key is still a credential. Restrict it to the narrowest possible origin and event-type set.
+
+## Project API keys
+
+Project API keys support project-scoped machine access according to their configured scope.
+
+Core lifecycle endpoints include:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/api-keys` | List keys and lifecycle metadata |
+| `POST` | `/v1/api-keys` | Create a key |
+| `POST` | `/v1/api-keys/{api_key_id}/revoke` | Revoke a key |
+| `GET` | `/v1/api-keys/me` | Inspect the authenticating key |
+| `GET` | `/v1/api-keys/ping` | Test API-key authentication |
+
+The detailed request and response schemas are documented in [API Keys reference](/reference/api-keys).
+
+## Operational rules
+
+- Use one key per producer and environment.
+- Apply the minimum scope required.
+- Never commit a key to source control.
+- Never place a key in a URL or event payload.
+- Avoid logging request headers that contain credentials.
+- Rotate a key after suspected exposure.
+- Revoke unused keys.
+- Do not expose unrestricted server keys in browser code.
+- Use browser-safe keys only with explicit origin and event-type restrictions.
+
+## Related documentation
+
+- [API Keys reference](/reference/api-keys)
+- [Authentication](/authentication)
+- [Events API](/reference/events)
+- [Event Ingestion guide](/guides/event-ingestion)
+- [API Keys concept](/concepts/api-keys)

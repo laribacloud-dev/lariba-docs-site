@@ -1,0 +1,300 @@
+# Rate Limits
+
+Lariba Cloud applies runtime rate limiting to selected API routes to protect authentication, ingestion, administrative actions, search, analytics, and other operational surfaces.
+
+Rate limiting is enforced by middleware. The current OpenAPI document does not explicitly enumerate HTTP `429` responses or rate-limit headers, so clients must treat runtime response headers as authoritative.
+
+## How limits are applied
+
+Each protected route is assigned a named rate-limit policy with:
+
+- a time window;
+- an IP-based limit;
+- an optional credential-based limit;
+- a bucket scope;
+- a route and method matcher.
+
+Two bucket modes are used:
+
+| Bucket mode | Behaviour |
+| --- | --- |
+| IP | Requests share a bucket based on the client IP |
+| Credential | Authenticated requests use a credential-specific bucket; requests without a usable credential fall back to an IP bucket |
+
+Credential-scoped tests confirm that:
+
+- different Bearer tokens use separate buckets;
+- different `X-API-Key` values use separate buckets;
+- the same credential is isolated across different policies;
+- IP-scoped policies remain isolated from other IP-scoped policies.
+
+Only routes matched by a configured rule are limited. Requests outside the matched `/v1/` surfaces, such as the health endpoint, are not assigned one of these policies.
+
+## Current default policies
+
+The following table reflects the current middleware defaults. Limits can change as the service evolves, so production clients should read the returned headers instead of hard-coding these values.
+
+| Policy | Route and methods | Window | IP limit | Credential limit |
+| --- | --- | ---: | ---: | ---: |
+| `auth-login` | `POST /v1/auth/login` | 5 minutes | 20 | — |
+| `auth-register` | `POST /v1/auth/register` | 15 minutes | 15 | — |
+| `organization-invite-create` | `POST /v1/organizations/{organization_id}/invites` | 5 minutes | 20 | 10 |
+| `organization-invite-owner-action` | `POST /v1/organizations/invites/{invite_id}/resend` and `/revoke` | 5 minutes | 20 | 10 |
+| `events` | `GET` and `POST` under `/v1/events` | 1 minute | 30 | 60 |
+| `project-events-explorer` | `GET /v1/projects/{project_id}/events` | 1 minute | 10 | 30 |
+| `project-dashboard` | `GET /v1/projects/{project_id}/dashboard` | 1 minute | 10 | 30 |
+| `api-keys-machine-auth` | `GET /v1/api-keys/me` | 1 minute | 20 | 60 |
+| `api-keys-mutate` | `POST` under `/v1/api-keys` | 1 minute | 10 | 20 |
+| `billing-status` | `GET /v1/billing/status` | 1 minute | 20 | 60 |
+| `billing-admin` | `PATCH` under `/v1/billing/org/` | 5 minutes | 20 | 10 |
+| `billing-self-serve` | `POST /v1/billing/checkout-session` and `/portal` | 1 minute | 20 | 30 |
+| `search` | `GET /v1/search` | 1 minute | 10 | 30 |
+| `analytics` | `GET` under `/v1/analytics` | 1 minute | 10 | 20 |
+| `eql` | `GET` and `POST` under `/v1/eql` | 1 minute | 10 | 20 |
+| `logs` | `GET` under `/v1/logs` | 1 minute | 10 | 20 |
+| `performance` | `GET` under `/v1/performance` | 1 minute | 10 | 20 |
+| `usage` | `GET` under `/v1/usage` | 1 minute | 10 | 20 |
+
+The `auth-login` and `auth-register` IP limits can be overridden by runtime configuration.
+
+## Response headers
+
+Rate-limited routes expose these headers:
+
+| Header | Meaning |
+| --- | --- |
+| `X-RateLimit-Policy` | Name of the matched rate-limit policy |
+| `X-RateLimit-Limit` | Maximum requests allowed in the active bucket and window |
+| `X-RateLimit-Remaining` | Requests remaining in the active window |
+| `X-RateLimit-Reset` | Unix timestamp when capacity begins to reset |
+| `Retry-After` | Seconds to wait before retrying a blocked request |
+
+These headers are exposed through CORS for permitted browser origins.
+
+Inspect the headers on both successful and blocked requests. A blocked middleware request returns HTTP `429`.
+
+Example header set:
+
+```text
+X-RateLimit-Policy: events
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1784937600
+Retry-After: 24
+```
+
+The numeric values above are illustrative. Use the values returned by the actual response.
+
+## Handling HTTP 429
+
+HTTP `429` means the current request cannot proceed because a request-rate, daily-ingestion, or workflow cooldown limit has been reached.
+
+Recommended client behaviour:
+
+1. read `Retry-After` when present;
+2. pause for at least the specified number of seconds;
+3. use bounded exponential backoff with jitter;
+4. preserve the original idempotency key for a retried write;
+5. avoid parallel retries using the same credential;
+6. stop retrying after a defined maximum attempt count;
+7. record the policy and reset metadata without logging credentials.
+
+A basic TypeScript helper:
+
+```ts
+export function retryDelayMilliseconds(
+  response: Response,
+  attempt: number,
+): number {
+  const retryAfter = response.headers.get("Retry-After")
+  const parsedSeconds = retryAfter
+    ? Number.parseInt(retryAfter, 10)
+    : Number.NaN
+
+  if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) {
+    return parsedSeconds * 1000
+  }
+
+  const boundedAttempt = Math.min(Math.max(attempt, 0), 6)
+  const exponentialDelay = 1000 * 2 ** boundedAttempt
+  const jitter = Math.floor(Math.random() * 500)
+
+  return exponentialDelay + jitter
+}
+```
+
+Do not immediately rotate credentials or generate a new API key to bypass a limit.
+
+## Example inspection
+
+Use `curl` without printing the API key:
+
+```bash
+curl --include \
+  --request POST \
+  "${LARIBA_API_BASE_URL}/v1/events/ingest" \
+  --header "Content-Type: application/json" \
+  --header "X-API-Key: $LARIBA_SOURCE_API_KEY" \
+  --data '{
+    "event_type": "rate_limit.example",
+    "source": "integration-test"
+  }'
+```
+
+Relevant response headers can be extracted without storing the credential:
+
+```bash
+curl --silent --show-error --dump-header - \
+  --output /dev/null \
+  --request GET \
+  "${LARIBA_API_BASE_URL}/v1/api-keys/me" \
+  --header "X-API-Key: $LARIBA_API_KEY" \
+  | grep -iE '^(retry-after|x-ratelimit-)'
+```
+
+## Sliding-window behaviour
+
+The current limiter uses a sliding-window model.
+
+For each bucket, Lariba Cloud records request timestamps inside the configured window. Expired timestamps are removed before the next decision.
+
+When the bucket is full:
+
+- the request is rejected;
+- the remaining count is `0`;
+- the reset value is derived from the oldest active request;
+- `Retry-After` is at least one second.
+
+This model avoids the abrupt boundary effects associated with fixed calendar windows.
+
+## Rate-limit backends
+
+Lariba Cloud supports:
+
+- an in-memory sliding-window backend;
+- a Redis sliding-window backend.
+
+Runtime selection uses:
+
+- `RATE_LIMIT_BACKEND`;
+- `RATE_LIMIT_REDIS_URL`;
+- `REDIS_URL` as a Redis URL fallback.
+
+Allowed `RATE_LIMIT_BACKEND` values are:
+
+- `auto`;
+- `memory`;
+- `redis`.
+
+### Local and test environments
+
+The in-memory backend is suitable for local development and tests.
+
+It is process-local. Multiple application instances do not share the same counters, so it must not be treated as a distributed production limit.
+
+### Production
+
+Production rate limiting requires Redis.
+
+In production:
+
+- `RATE_LIMIT_BACKEND=memory` is rejected;
+- `RATE_LIMIT_REDIS_URL` or `REDIS_URL` is required;
+- `auto` or `redis` selects the Redis backend.
+
+This preserves shared counters across application instances.
+
+## Authentication overrides
+
+The current authentication policy defaults can be adjusted with:
+
+| Variable | Default | Policy |
+| --- | ---: | --- |
+| `AUTH_LOGIN_RATE_LIMIT_IP` | `20` | `auth-login` |
+| `AUTH_REGISTER_RATE_LIMIT_IP` | `15` | `auth-register` |
+
+Their windows remain five minutes for login and fifteen minutes for registration unless the implementation is changed.
+
+## Other HTTP 429 sources
+
+Not every HTTP `429` originates from the middleware.
+
+### Source daily event limit
+
+Event ingestion can return:
+
+```json
+{
+  "detail": "Daily limit exceeded"
+}
+```
+
+This is a source-level daily ingestion constraint. It is separate from the middleware’s per-minute `events` policy.
+
+### Invitation resend cooldown
+
+Resending an organization invitation too soon can return:
+
+```json
+{
+  "detail": "Please wait before resending this invitation"
+}
+```
+
+This workflow cooldown is separate from the general invitation owner-action policy.
+
+Clients should inspect both the response body and available headers before deciding when to retry.
+
+## Browser-safe key setting
+
+Browser-safe API keys currently expose a `rate_limit_per_minute` field:
+
+- default: `60`;
+- minimum: `1`;
+- maximum: `10000`.
+
+The current model explicitly marks this per-key browser setting as future functionality and does not enforce it yet.
+
+Do not assume that `rate_limit_per_minute` overrides the middleware’s `events` policy.
+
+## Delivery and upstream rate limits
+
+When a webhook or alert destination returns HTTP `429`, Lariba Cloud treats it as a retryable delivery failure.
+
+For alert delivery:
+
+- `429` is included in the retryable status set;
+- a valid upstream `Retry-After` value is used when scheduling the next attempt;
+- an invalid or absent value falls back to the configured retry policy.
+
+This outbound behaviour is distinct from rate limiting applied to incoming Lariba Cloud API requests.
+
+## Operational guidance
+
+For reliable integrations:
+
+1. distribute traffic rather than sending large bursts;
+2. use one stable credential per intended integration boundary;
+3. monitor `X-RateLimit-Policy`, remaining capacity, and reset time;
+4. preserve idempotency keys across safe ingestion retries;
+5. respect `Retry-After`;
+6. use bounded backoff with jitter;
+7. cap retry attempts;
+8. do not log Bearer tokens or API keys;
+9. distinguish middleware limits from daily quotas and workflow cooldowns;
+10. avoid relying on current default numbers as permanent commercial quotas.
+
+## OpenAPI visibility
+
+The current OpenAPI snapshot does not explicitly list the middleware’s HTTP `429` responses or rate-limit headers.
+
+This documentation reflects the active runtime implementation and tests. Client code should remain tolerant of policy changes and should use returned headers as the source of truth for each request.
+
+## Related documentation
+
+- [Errors](/concepts/errors)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
+- [Projects API](/reference/projects)

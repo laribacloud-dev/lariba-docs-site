@@ -1,0 +1,180 @@
+# Organizations and Projects
+
+Organizations and projects define Lariba Cloud’s workspace and authorization boundary.
+
+An organization contains one or more projects. Organization membership is authoritative for access to every project in that organization.
+
+## Resource hierarchy
+
+```text
+User
+└── Organization
+    ├── Members and roles
+    ├── Invitations and invitation audits
+    └── Projects
+        ├── Event Sources
+        ├── API keys
+        ├── Events
+        ├── Delivery resources
+        └── Usage and operational data
+```
+
+Each organization and project has:
+
+- a stable identifier;
+- a human-readable name;
+- a slug;
+- an owner;
+- a creation timestamp.
+
+A project also references its parent organization.
+
+## Organizations
+
+An organization is the top-level collaboration boundary.
+
+Creating an organization requires:
+
+- `name`: 1–200 characters;
+- `slug`: 1–200 characters.
+
+The authenticated creator becomes the organization owner and receives an organization membership with the `owner` role.
+
+A user can list organizations they own and organizations where they hold membership.
+
+## Projects
+
+A project is the operational isolation boundary inside an organization.
+
+Creating a project requires:
+
+- `organization_id`;
+- `name`: 1–200 characters;
+- `slug`: 1–200 characters.
+
+Project-scoped resources, events, API keys, Delivery configuration, dashboards, and usage records are associated with a project.
+
+## Membership inheritance
+
+Organization membership is authoritative for project access.
+
+When a user belongs to an organization, that role determines access across the organization’s projects. Organization membership changes are synchronized to project memberships.
+
+This means:
+
+- adding an organization member grants inherited access to the organization’s projects;
+- changing the organization role updates synchronized project memberships;
+- removing the organization membership removes synchronized project access;
+- the organization owner has owner-level access across every project in the organization.
+
+Project membership records remain visible through project member endpoints, but organization membership is the governing source for authorization.
+
+## Roles
+
+Lariba Cloud uses these workspace roles:
+
+| Role | Relative level | General intent |
+| --- | ---: | --- |
+| `viewer` | 0 | Read-only operational visibility |
+| `member` | 1 | Standard project participation |
+| `operator` | 1 | Operational investigation and recovery actions |
+| `admin` | 2 | Administrative and operational control |
+| `owner` | 3 | Highest workspace authority |
+
+`member` and `operator` have the same threshold level for role-order checks, but they do not have the same permission set.
+
+## Delivery permissions by project role
+
+Current project permissions are explicit and Delivery-focused.
+
+| Role | Delivery permissions |
+| --- | --- |
+| `viewer` | `delivery:read` |
+| `member` | `delivery:read`, `delivery:manage_channels` |
+| `operator` | `delivery:read`, `delivery:replay`, `delivery:retry_now` |
+| `admin` | All current Delivery permissions |
+| `owner` | All current Delivery permissions |
+
+The complete current permission set is:
+
+- `delivery:read`;
+- `delivery:replay`;
+- `delivery:retry_now`;
+- `delivery:dlq_drain`;
+- `delivery:manage_channels`.
+
+Capability metadata can explain which actions are available, but backend RBAC remains authoritative.
+
+## Ownership rules
+
+Organization ownership has additional protections:
+
+- the organization owner always satisfies organization role checks;
+- the organization owner role is immutable through member-role updates;
+- the organization owner cannot be removed through the member-removal endpoint.
+
+Organization member-role updates accept:
+
+- `admin`;
+- `operator`;
+- `member`;
+- `viewer`.
+
+The owner role is assigned when the organization is created, not through the standard role-update endpoint.
+
+## Invitations
+
+Organization owners can invite users as:
+
+- `operator`;
+- `viewer`.
+
+The default invitation role is `operator`.
+
+Invitation lifecycle operations include:
+
+- create;
+- list;
+- resend;
+- revoke;
+- accept;
+- decline.
+
+Invitation records expose status, role, timestamps, delivery state, and sanitized target identity. Invitation audit records preserve action, outcome, reason code, requested role, request identifier, and creation time.
+
+## Project selection
+
+`POST /v1/projects/select` accepts a `project_id` and returns the selected project.
+
+Project selection identifies the current project context for user-facing workflows. It does not replace backend authorization checks.
+
+## Project capabilities
+
+A project capability response currently exposes whether the authenticated user can:
+
+- read Delivery evidence;
+- replay a Delivery attempt;
+- retry a Delivery attempt immediately;
+- drain the Delivery DLQ;
+- manage Delivery channels.
+
+These booleans are derived from project authorization. They guide clients but do not grant access independently.
+
+## Isolation principles
+
+Use organizations and projects to preserve clear tenancy boundaries:
+
+1. place related projects inside the correct organization;
+2. manage users at the organization boundary;
+3. grant the minimum role required;
+4. avoid treating client-side visibility as authorization;
+5. keep every project-scoped request bound to the intended project identifier;
+6. verify cross-tenant access is rejected by the backend.
+
+## Related documentation
+
+- [Projects API reference](/reference/projects)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Event Ingestion](/guides/event-ingestion)
+- [Events API](/reference/events)
