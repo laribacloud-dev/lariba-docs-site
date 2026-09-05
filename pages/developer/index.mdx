@@ -1,0 +1,41 @@
+# Developer Environment
+
+> Docs 0.4 public documentation.
+
+**Docs baseline:** 0.4
+**Phase:** B / B2
+**Status:** controlled draft / evidence review required
+
+This directory documents the current developer-environment path for the Lariba Cloud workspace.
+
+The documentation is source-backed and intentionally separates:
+
+- installation and workspace entry;
+- environment configuration;
+- PostgreSQL bootstrap/verification;
+- Alembic migration workflow;
+- troubleshooting.
+
+These documents do not establish Phase-C reproducibility. Phase C later proves the documented path across clean machines and portable environments.
+
+## Current B2 scope
+
+```text
+B-010 Developer installation documentation
+B-011 Environment configuration documentation
+B-012 PostgreSQL bootstrap documentation
+B-013 Alembic workflow documentation
+B-019 Troubleshooting foundation
+```
+
+## Safety boundary
+
+Do not copy real secrets, production credentials, or production database URLs into documentation, shell history, screenshots, or tracked `.env` files.
+
+See the individual guides in this directory.
+
+## Developer Golden Path
+
+For the canonical end-to-end developer sequence, use [`golden-path.md`](golden-path.md).
+
+The Golden Path composes the accepted installation, environment, PostgreSQL, Alembic, authentication, source, ingestion, Sentinel, delivery/recovery, and troubleshooting documentation. It does not replace those source documents.

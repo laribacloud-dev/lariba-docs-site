@@ -201,3 +201,123 @@ Use delivery-attempt history and project-specific observability to investigate i
 - [Webhooks](/guides/webhooks)
 - [Events API](/reference/events)
 - [Logs](/reference/logs)
+
+---
+
+## Docs 0.4 delivery and recovery workflow
+
+The following workflow guidance reflects the Docs 0.4 documentation baseline.
+
+**Requirement:** B-018
+**Status:** controlled draft / evidence review required
+
+## Purpose
+
+Document the current implemented workflow for delivery attempts, retry/replay, worker processing and failure/recovery evidence without converting planned architecture or uncommitted product state into implementation claims.
+
+## Current route contract inventory
+
+| Method | Decorator path | Function | Source |
+|---|---|---|---|
+| `DELETE` | `/channels/{channel_id}` | `delete_notification_channel` | `lariba-cloud/src/api/delivery_channels.py:562` |
+| `DELETE` | `/channels/{channel_id}/protected-headers/{header_name}` | `remove_notification_channel_protected_header` | `lariba-cloud/src/api/delivery_channels.py:515` |
+| `DELETE` | `/{destination_id}` | `delete_alert_destination` | `lariba-cloud/src/api/alert_destinations.py:412` |
+| `DELETE` | `/{destination_id}` | `delete_alert_destination_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:490` |
+| `GET` | `(empty decorator path; router prefix/source context applies)` | `list_alert_deliveries` | `lariba-cloud/src/api/alert_deliveries.py:66` |
+| `GET` | `(empty decorator path; router prefix/source context applies)` | `list_alert_destinations` | `lariba-cloud/src/api/alert_destinations.py:199` |
+| `GET` | `(empty decorator path; router prefix/source context applies)` | `list_alert_destinations_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:298` |
+| `GET` | `/channels` | `list_notification_channels` | `lariba-cloud/src/api/delivery_channels.py:218` |
+| `GET` | `/deliveries` | `list_alert_deliveries_dashboard` | `lariba-cloud/src/api/alert_delivery_dashboard.py:158` |
+| `GET` | `/deliveries/{delivery_id}` | `get_alert_delivery_dashboard_item` | `lariba-cloud/src/api/alert_delivery_dashboard.py:361` |
+| `GET` | `/delivery-metrics` | `get_alert_delivery_metrics_dashboard` | `lariba-cloud/src/api/alert_delivery_dashboard.py:283` |
+| `GET` | `/health` | `health` | `acceptance/lariba-delivery-acceptance-sink/app/main.py:253` |
+| `GET` | `/history` | `list_notification_delivery_history` | `lariba-cloud/src/api/delivery_history.py:395` |
+| `GET` | `/history/{attempt_id}` | `get_notification_delivery_attempt` | `lariba-cloud/src/api/delivery_history.py:489` |
+| `GET` | `/retry-audits` | `list_notification_delivery_retry_audits` | `lariba-cloud/src/api/delivery_history.py:452` |
+| `GET` | `/{rule_id}/destinations` | `get_alert_rule_destinations` | `lariba-cloud/src/api/alert_rule_destinations.py:117` |
+| `GET` | `/{trigger_id}/deliveries` | `list_source_intelligence_trigger_deliveries` | `lariba-cloud/src/api/source_intelligence_deliveries.py:170` |
+| `PATCH` | `/channels/{channel_id}` | `update_notification_channel` | `lariba-cloud/src/api/delivery_channels.py:313` |
+| `PATCH` | `/channels/{channel_id}/protected-headers/{header_name}` | `rotate_notification_channel_protected_header` | `lariba-cloud/src/api/delivery_channels.py:462` |
+| `PATCH` | `/{destination_id}` | `update_alert_destination` | `lariba-cloud/src/api/alert_destinations.py:231` |
+| `PATCH` | `/{destination_id}` | `update_alert_destination_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:364` |
+| `PATCH` | `/{trigger_id}/deliveries/{delivery_id}` | `update_source_intelligence_trigger_delivery` | `lariba-cloud/src/api/source_intelligence_deliveries.py:204` |
+| `POST` | `(empty decorator path; router prefix/source context applies)` | `create_alert_destination` | `lariba-cloud/src/api/alert_destinations.py:148` |
+| `POST` | `(empty decorator path; router prefix/source context applies)` | `create_alert_destination_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:320` |
+| `POST` | `/channels` | `create_notification_channel` | `lariba-cloud/src/api/delivery_channels.py:240` |
+| `POST` | `/channels/{channel_id}/protected-headers` | `add_notification_channel_protected_header` | `lariba-cloud/src/api/delivery_channels.py:408` |
+| `POST` | `/channels/{channel_id}/test` | `test_notification_channel` | `lariba-cloud/src/api/delivery_channels.py:636` |
+| `POST` | `/control/mode` | `control_mode` | `acceptance/lariba-delivery-acceptance-sink/app/main.py:297` |
+| `POST` | `/delivery` | `receive_delivery` | `acceptance/lariba-delivery-acceptance-sink/app/main.py:265` |
+| `POST` | `/history/{attempt_id}/dlq-drain` | `drain_notification_delivery_dlq_attempt` | `lariba-cloud/src/api/delivery.py:279` |
+| `POST` | `/history/{attempt_id}/dlq-drain-readiness` | `check_notification_delivery_dlq_drain_readiness` | `lariba-cloud/src/api/delivery.py:250` |
+| `POST` | `/history/{attempt_id}/replay` | `replay_notification_delivery_attempt` | `lariba-cloud/src/api/delivery.py:397` |
+| `POST` | `/history/{attempt_id}/replay-readiness` | `check_notification_delivery_replay_readiness` | `lariba-cloud/src/api/delivery.py:209` |
+| `POST` | `/history/{attempt_id}/retry-now` | `retry_now_notification_delivery_attempt` | `lariba-cloud/src/api/delivery.py:334` |
+| `POST` | `/history/{attempt_id}/retry-now-readiness` | `check_notification_delivery_retry_now_readiness` | `lariba-cloud/src/api/delivery.py:223` |
+| `POST` | `/mfa/recovery-code/verify` | `complete_mfa_recovery_code_login` | `lariba-cloud/src/api/auth.py:1020` |
+| `POST` | `/two-factor/recovery-codes/regenerate` | `regenerate_two_factor_recovery_codes` | `lariba-cloud/src/api/account.py:295` |
+| `POST` | `/{delivery_id}/replay` | `replay_alert_delivery` | `lariba-cloud/src/api/alert_replay.py:27` |
+| `POST` | `/{destination_id}/disable` | `disable_alert_destination` | `lariba-cloud/src/api/alert_destinations.py:342` |
+| `POST` | `/{destination_id}/disable` | `disable_alert_destination_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:440` |
+| `POST` | `/{destination_id}/enable` | `enable_alert_destination` | `lariba-cloud/src/api/alert_destinations.py:304` |
+| `POST` | `/{destination_id}/enable` | `enable_alert_destination_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:412` |
+| `POST` | `/{destination_id}/test` | `test_alert_destination` | `lariba-cloud/src/api/alert_destinations.py:380` |
+| `POST` | `/{destination_id}/test` | `test_alert_destination_dashboard` | `lariba-cloud/src/api/alert_destinations_dashboard.py:468` |
+| `POST` | `/{trigger_id}/deliveries` | `create_source_intelligence_trigger_delivery` | `lariba-cloud/src/api/source_intelligence_deliveries.py:130` |
+| `PUT` | `/{rule_id}/destinations` | `replace_alert_rule_destinations` | `lariba-cloud/src/api/alert_rule_destinations.py:143` |
+
+## Reviewed implementation concepts
+
+The B3 review observed the following concepts in its high-value source set:
+
+`delivery`, `retry`, `worker`, `claim`, `destination`, `failed`, `failure`, `replay`, `lease`, `attempt`, `backoff`
+
+This signal list is supporting discovery evidence only; a keyword occurrence is not independently sufficient to establish behavior.
+
+## Representative domain/API symbols
+
+- `AlertDelivery` (class) — `lariba-cloud/src/models/alert_delivery.py:11`
+- `AlertDeliveryDashboardItem` (class) — `lariba-cloud/src/api/alert_delivery_dashboard.py:23`
+- `AlertDeliveryDashboardListResponse` (class) — `lariba-cloud/src/api/alert_delivery_dashboard.py:40`
+- `AlertDeliveryMetricsResponse` (class) — `lariba-cloud/src/api/alert_delivery_dashboard.py:46`
+- `AlertDeliveryResponse` (class) — `lariba-cloud/src/api/alert_deliveries.py:17`
+- `AlertDestination` (class) — `lariba-cloud/src/models/alert_destination.py:11`
+- `AlertDestinationCreate` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:11`
+- `AlertDestinationDashboardCreate` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:43`
+- `AlertDestinationDashboardResponse` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:59`
+- `AlertDestinationDashboardTestResponse` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:71`
+- `AlertDestinationDashboardUpdate` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:52`
+- `AlertDestinationResponse` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:34`
+- `AlertDestinationTestResponse` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:46`
+- `AlertDestinationUpdate` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:23`
+
+## Supporting committed web paths
+
+- `app/(marketing)/docs/delivery/page.tsx`
+- `app/api/session/mfa/recovery-code/verify/route.ts`
+- `app/dashboard/alert-deliveries/_components/delivery-destination-icon.tsx`
+- `app/dashboard/alert-destinations/_components/alert-destination-modal.tsx`
+- `app/dashboard/alert-destinations/_components/alert-destinations-page-content.tsx`
+- `app/dashboard/alert-destinations/_components/alert-destinations-ui.tsx`
+- `app/dashboard/alert-destinations/_hooks/use-alert-destinations-page.ts`
+- `app/dashboard/alert-destinations/_lib/alert-destinations-types.ts`
+- `app/dashboard/alert-destinations/_lib/alert-destinations-utils.ts`
+- `app/dashboard/alert-destinations/page.tsx`
+- `app/dashboard/alerts/_components/edit-rule-destinations-modal.tsx`
+- `app/dashboard/delivery/_components/delivery-action-confirmations.tsx`
+- `app/dashboard/delivery/_components/delivery-channel-dialogs.tsx`
+- `app/dashboard/delivery/_components/delivery-dlq-drain-confirmation.tsx`
+- `app/dashboard/delivery/_components/delivery-page-content.tsx`
+- `app/dashboard/delivery/_components/delivery-ui.tsx`
+- `app/dashboard/delivery/_lib/delivery-types.ts`
+- `app/dashboard/delivery/_lib/delivery-utils.ts`
+- `app/dashboard/delivery/page.tsx`
+- `app/dashboard/events/sources/_lib/source-delivery-readiness.ts`
+
+## Failure and authority rule
+
+A walkthrough claim is valid only to the extent that the current tracked implementation and verification evidence support it. When the guide, an older document, and current code/tests disagree, stop and reconcile the documentation rather than silently strengthening the claim.
+
+## B3 boundary
+
+This document does not authorize live production execution, database mutation, deployment, credential disclosure, or a gate transition.

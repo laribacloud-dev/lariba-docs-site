@@ -1,0 +1,32 @@
+# PostgreSQL Bootstrap
+
+> Docs 0.4 public documentation.
+
+**Requirement:** B-012
+**Status:** controlled draft / evidence review required
+
+## Connection authority
+
+The repository uses `DATABASE_URL` as a primary database connection input in current source surfaces. PostgreSQL-specific tests also reference `POSTGRES_TEST_DATABASE_URL`.
+
+Do not paste real database URLs into documentation.
+
+## Tracked bootstrap / client command candidates
+
+- `createdb --maintenance-db=postgres "${CREATED_DATABASE}"` — source: `lariba-cloud/scripts/postgres-integration-check.sh:33`
+
+## Verification path
+
+The tracked backend contains:
+
+```text
+lariba-cloud/scripts/postgres-integration-check.sh
+```
+
+Use the repository's current script semantics when validating local PostgreSQL integration. B2 documentation must not reinterpret a production recovery or production migration command as a normal developer bootstrap command.
+
+## Safety
+
+The B2 evidence process did not create, drop, reset, upgrade, or mutate a database.
+
+Database-destructive recovery procedures belong to their explicit operations runbooks, not the normal developer bootstrap path.

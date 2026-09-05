@@ -1,0 +1,32 @@
+# Installation
+
+> Docs 0.4 public documentation.
+
+**Requirement:** B-010
+**Status:** controlled draft / evidence review required
+
+## Workspace boundary
+
+The primary repository is the Lariba Cloud workspace. The canonical backend lives under:
+
+```text
+lariba-cloud/
+```
+
+Run backend-specific commands from that backend directory unless the command's tracked source explicitly says otherwise.
+
+## Current tracked bootstrap-command candidates
+
+The following commands were discovered in current tracked repository sources and are preserved here with provenance for B2 review:
+
+- `pytest suite with coverage.` — source: `lariba-cloud/README.md:230`
+- `pytest selections without coverage by default. Set `BACKEND_TEST_SHARD=INDEX/TOTAL` — source: `lariba-cloud/README.md:249`
+- `python -m pip install -U pip` — source: `.github/workflows/ci.yml:74`
+- `pip install -r requirements.txt` — source: `.github/workflows/ci.yml:75`
+- `pip install -r requirements-dev.txt` — source: `.github/workflows/ci.yml:76`
+
+Do not treat a command as production deployment authority merely because it appears in a developer guide.
+
+## Verification
+
+After installation, use the repository's current quick/full check scripts or pytest commands that are explicitly tracked for the backend. B2 does not redefine CI policy.

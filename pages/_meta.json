@@ -1,15 +1,13 @@
 {
   "index": "Introduction",
   "quickstart": "Quickstart",
-
   "authentication": "Authentication",
   "api-keys": "API Keys",
   "sdks": "SDKs",
-
+  "developer": "Developer",
   "guides": "Guides",
   "concepts": "Concepts",
   "operations": "Operations",
   "reference": "API Reference",
-
   "changelog": "Changelog"
 }

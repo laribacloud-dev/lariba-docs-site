@@ -1,0 +1,89 @@
+# Sentinel
+
+> Docs 0.4 public documentation.
+
+**Requirement:** B-017
+**Status:** controlled draft / evidence review required
+
+## Purpose
+
+Document the current implemented workflow for rule configuration/evaluation and alert production without converting planned architecture or uncommitted product state into implementation claims.
+
+## Current route contract inventory
+
+| Method | Decorator path | Function | Source |
+|---|---|---|---|
+| `DELETE` | `/alert-rules/{alert_id}` | `delete_alert_rule` | `lariba-cloud/src/api/alerts.py:426` |
+| `GET` | `(empty decorator path; router prefix/source context applies)` | `list_rule_evaluations` | `lariba-cloud/src/api/sentinel_rule_evaluations.py:55` |
+| `GET` | `/alert-rules` | `list_alert_rules` | `lariba-cloud/src/api/alerts.py:366` |
+| `GET` | `/alert-rules/{alert_id}/evaluate` | `evaluate_alert_rule` | `lariba-cloud/src/api/alerts.py:446` |
+| `GET` | `/alerts` | `list_alerts` | `lariba-cloud/src/api/alerts.py:492` |
+| `GET` | `/alerts/project/{project_id}` | `list_alert_rules_legacy` | `lariba-cloud/src/api/alerts.py:386` |
+| `GET` | `/alerts/{alert_id}/evaluate` | `evaluate_alert_rule` | `lariba-cloud/src/api/alerts.py:446` |
+| `GET` | `/previews` | `list_automation_previews` | `lariba-cloud/src/api/sentinel_automation.py:240` |
+| `GET` | `/previews/{preview_id}/audit-events` | `list_automation_audit_events` | `lariba-cloud/src/api/sentinel_automation.py:344` |
+| `GET` | `/{rule_id}/destinations` | `get_alert_rule_destinations` | `lariba-cloud/src/api/alert_rule_destinations.py:117` |
+| `PATCH` | `/alert-rules/{alert_id}` | `update_alert_rule` | `lariba-cloud/src/api/alerts.py:395` |
+| `PATCH` | `/alerts/{alert_id}` | `update_alert` | `lariba-cloud/src/api/alerts.py:548` |
+| `POST` | `/alert-rules` | `create_alert_rule` | `lariba-cloud/src/api/alerts.py:326` |
+| `POST` | `/alerts` | `create_alert_rule` | `lariba-cloud/src/api/alerts.py:326` |
+| `POST` | `/previews` | `create_automation_preview` | `lariba-cloud/src/api/sentinel_automation.py:191` |
+| `POST` | `/previews/{preview_id}/approval` | `review_automation_preview` | `lariba-cloud/src/api/sentinel_automation.py:273` |
+| `POST` | `/previews/{preview_id}/policy-check` | `check_automation_policy` | `lariba-cloud/src/api/sentinel_automation.py:371` |
+| `PUT` | `/{rule_id}/destinations` | `replace_alert_rule_destinations` | `lariba-cloud/src/api/alert_rule_destinations.py:143` |
+
+## Reviewed implementation concepts
+
+The B3 review observed the following concepts in its high-value source set:
+
+`rule`, `alert`, `severity`, `evaluation`, `evaluate`, `trigger`, `enabled`, `disabled`
+
+This signal list is supporting discovery evidence only; a keyword occurrence is not independently sufficient to establish behavior.
+
+## Representative domain/API symbols
+
+- `AlertDelivery` (class) — `lariba-cloud/src/models/alert_delivery.py:11`
+- `AlertDeliveryDashboardItem` (class) — `lariba-cloud/src/api/alert_delivery_dashboard.py:23`
+- `AlertDeliveryDashboardListResponse` (class) — `lariba-cloud/src/api/alert_delivery_dashboard.py:40`
+- `AlertDeliveryMetricsResponse` (class) — `lariba-cloud/src/api/alert_delivery_dashboard.py:46`
+- `AlertDeliveryResponse` (class) — `lariba-cloud/src/api/alert_deliveries.py:17`
+- `AlertDestination` (class) — `lariba-cloud/src/models/alert_destination.py:11`
+- `AlertDestinationCreate` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:11`
+- `AlertDestinationDashboardCreate` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:43`
+- `AlertDestinationDashboardResponse` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:59`
+- `AlertDestinationDashboardTestResponse` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:71`
+- `AlertDestinationDashboardUpdate` (class) — `lariba-cloud/src/api/alert_destinations_dashboard.py:52`
+- `AlertDestinationResponse` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:34`
+- `AlertDestinationTestResponse` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:46`
+- `AlertDestinationUpdate` (class) — `lariba-cloud/src/api/alert_destinations_schemas.py:23`
+
+## Supporting committed web paths
+
+- `app/dashboard/alert-deliveries/_components/alert-deliveries-page-content.tsx`
+- `app/dashboard/alert-deliveries/_components/alert-deliveries-ui.tsx`
+- `app/dashboard/alert-deliveries/_components/delivery-destination-icon.tsx`
+- `app/dashboard/alert-deliveries/_hooks/use-alert-deliveries-page.ts`
+- `app/dashboard/alert-deliveries/_lib/alert-deliveries-types.ts`
+- `app/dashboard/alert-deliveries/_lib/alert-deliveries-utils.ts`
+- `app/dashboard/alert-deliveries/page.tsx`
+- `app/dashboard/alert-destinations/_components/alert-destination-modal.tsx`
+- `app/dashboard/alert-destinations/_components/alert-destinations-page-content.tsx`
+- `app/dashboard/alert-destinations/_components/alert-destinations-ui.tsx`
+- `app/dashboard/alert-destinations/_hooks/use-alert-destinations-page.ts`
+- `app/dashboard/alert-destinations/_lib/alert-destinations-types.ts`
+- `app/dashboard/alert-destinations/_lib/alert-destinations-utils.ts`
+- `app/dashboard/alert-destinations/page.tsx`
+- `app/dashboard/alerts/_components/alert-timeseries-chart.tsx`
+- `app/dashboard/alerts/_components/alerts-ui.tsx`
+- `app/dashboard/alerts/_components/edit-rule-destinations-modal.tsx`
+- `app/dashboard/alerts/_hooks/use-alert-events-data.ts`
+- `app/dashboard/alerts/_hooks/use-alert-rules-data.ts`
+- `app/dashboard/alerts/_hooks/use-alerts-dashboard-data.ts`
+
+## Failure and authority rule
+
+A walkthrough claim is valid only to the extent that the current tracked implementation and verification evidence support it. When the guide, an older document, and current code/tests disagree, stop and reconcile the documentation rather than silently strengthening the claim.
+
+## B3 boundary
+
+This document does not authorize live production execution, database mutation, deployment, credential disclosure, or a gate transition.

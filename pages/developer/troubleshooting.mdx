@@ -1,0 +1,29 @@
+# Troubleshooting
+
+> Docs 0.4 public documentation.
+
+**Requirement:** B-019
+**Status:** troubleshooting foundation / evidence review required
+
+This is the Phase-B B2 foundation. Product-specific troubleshooting is expanded with later Auth, Sources, Ingestion, Sentinel and Delivery walkthroughs.
+
+| Symptom | First checks | Boundary |
+|---|---|---|
+| Command cannot find backend modules | Confirm you are in `lariba-cloud/`; confirm the backend virtualenv/interpreter context. | Do not alter `PYTHONPATH` globally without need. |
+| `ModuleNotFoundError: src` during direct Alembic Python API use | Run from the backend root or add the backend root to the one-shot Python import context. | This does not indicate a migration-graph failure by itself. |
+| PostgreSQL connection refused/unavailable | Confirm PostgreSQL is running; verify the intended connection input is configured; use tracked integration diagnostics. | Do not substitute a production DB URL. |
+| Missing/invalid database configuration | Review `DATABASE_URL` ownership in current settings/database source. | Do not print secret/connection values into tickets or docs. |
+| Alembic appears to have multiple heads from a text scan | Run `.venv/bin/alembic heads` from the backend directory. | Alembic's ScriptDirectory graph is authoritative. |
+| Alembic head differs from expected `20260831_a1_schema_authority` | Stop and review migration lineage before any upgrade/stamp action. | Do not repair by stamping blindly. |
+| Dependency/bootstrap failure | Compare local toolchain to current `pyproject.toml`, version files and CI workflow inputs. | Phase C later proves clean-machine reproducibility. |
+| Tests fail after bootstrap | Start with the repository's focused/quick/full check scripts and isolate environment/configuration failures before changing runtime code. | Preserve failing evidence; do not suppress checks. |
+
+## Current canonical migration head
+
+```text
+20260831_a1_schema_authority
+```
+
+## Escalation rule
+
+If documentation cannot be reconciled with current tracked implementation, stop and update the documentation evidence rather than inventing a stronger setup claim.

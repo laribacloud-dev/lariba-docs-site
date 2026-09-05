@@ -1,5 +1,7 @@
 {
   "event-ingestion": "Event Ingestion",
+  "source-creation": "Source Creation",
+  "sentinel": "Sentinel",
   "billing": "Billing",
   "webhooks": "Webhooks"
 }

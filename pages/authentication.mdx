@@ -266,3 +266,114 @@ A successful reset revokes existing user sessions and trusted devices.
 - [API Keys reference](/reference/api-keys)
 - [Events API](/reference/events)
 - [Organizations and Projects](/concepts/orgs-projects)
+
+---
+
+## Docs 0.4 authentication workflow
+
+The following workflow guidance reflects the Docs 0.4 documentation baseline.
+
+**Requirement:** B-014
+**Status:** controlled draft / evidence review required
+
+## Purpose
+
+Document the current implemented workflow for registration, login/session, verification and implemented authentication factors without converting planned architecture or uncommitted product state into implementation claims.
+
+## Current route contract inventory
+
+| Method | Decorator path | Function | Source |
+|---|---|---|---|
+| `DELETE` | `/accounts/{provider}` | `disconnect_connected_auth_account` | `lariba-cloud/src/api/auth.py:592` |
+| `GET` | `/accounts` | `get_connected_auth_accounts` | `lariba-cloud/src/api/auth.py:571` |
+| `GET` | `/me` | `me` | `lariba-cloud/src/api/auth.py:1251` |
+| `GET` | `/passkeys` | `get_account_passkeys` | `lariba-cloud/src/api/account.py:332` |
+| `GET` | `/{provider}/callback` | `oauth_callback_get` | `lariba-cloud/src/api/oauth_callback.py:32` |
+| `PATCH` | `/passkeys/{passkey_id}` | `rename_account_passkey` | `lariba-cloud/src/api/account.py:340` |
+| `POST` | `/2fa/totp/confirm` | `confirm_auth_totp` | `lariba-cloud/src/api/auth.py:1111` |
+| `POST` | `/2fa/totp/disable` | `disable_auth_totp` | `lariba-cloud/src/api/auth.py:1153` |
+| `POST` | `/2fa/totp/setup` | `setup_auth_totp` | `lariba-cloud/src/api/auth.py:1080` |
+| `POST` | `/account/checkout-session` | `create_account_checkout_session` | `lariba-cloud/src/api/billing.py:525` |
+| `POST` | `/account/checkout-session/sync` | `sync_account_checkout_session` | `lariba-cloud/src/api/billing.py:681` |
+| `POST` | `/checkout-session` | `create_checkout_session` | `lariba-cloud/src/api/billing.py:357` |
+| `POST` | `/login` | `login` | `lariba-cloud/src/api/auth.py:421` |
+| `POST` | `/logout` | `logout` | `lariba-cloud/src/api/auth.py:1230` |
+| `POST` | `/mfa/passkey/options` | `begin_mfa_passkey_login` | `lariba-cloud/src/api/auth.py:876` |
+| `POST` | `/mfa/passkey/verify` | `complete_mfa_passkey_login` | `lariba-cloud/src/api/auth.py:921` |
+| `POST` | `/mfa/recovery-code/verify` | `complete_mfa_recovery_code_login` | `lariba-cloud/src/api/auth.py:1020` |
+| `POST` | `/mfa/totp/verify` | `complete_mfa_totp_login` | `lariba-cloud/src/api/auth.py:966` |
+| `POST` | `/oauth/login` | `oauth_login` | `lariba-cloud/src/api/auth.py:514` |
+| `POST` | `/passkey/login/options` | `begin_passkey_login_flow` | `lariba-cloud/src/api/auth.py:623` |
+| `POST` | `/passkey/login/verify` | `complete_passkey_login_flow` | `lariba-cloud/src/api/auth.py:670` |
+| `POST` | `/passkey/passwordless/options` | `begin_passwordless_passkey_login_flow` | `lariba-cloud/src/api/auth.py:731` |
+| `POST` | `/passkey/passwordless/verify` | `complete_passwordless_passkey_login_flow` | `lariba-cloud/src/api/auth.py:752` |
+| `POST` | `/passkeys/register/options` | `begin_account_passkey_registration` | `lariba-cloud/src/api/account.py:394` |
+| `POST` | `/passkeys/register/options` | `begin_auth_passkey_registration` | `lariba-cloud/src/api/auth.py:824` |
+| `POST` | `/passkeys/register/verify` | `complete_account_passkey_registration` | `lariba-cloud/src/api/account.py:413` |
+| `POST` | `/passkeys/register/verify` | `complete_auth_passkey_registration` | `lariba-cloud/src/api/auth.py:849` |
+| `POST` | `/passkeys/{passkey_id}/remove` | `remove_account_passkey` | `lariba-cloud/src/api/account.py:459` |
+| `POST` | `/portal` | `create_billing_portal_session` | `lariba-cloud/src/api/billing.py:774` |
+| `POST` | `/refresh` | `refresh` | `lariba-cloud/src/api/auth.py:1189` |
+| `POST` | `/register` | `register` | `lariba-cloud/src/api/auth.py:305` |
+| `POST` | `/resend-verification` | `resend_verification_email` | `lariba-cloud/src/api/auth.py:380` |
+| `POST` | `/two-factor/recovery-codes/regenerate` | `regenerate_two_factor_recovery_codes` | `lariba-cloud/src/api/account.py:295` |
+| `POST` | `/v1/auth/login` | `login` | `lariba-cloud/tests/test_rate_limit_middleware.py:22` |
+| `POST` | `/v1/auth/register` | `register` | `lariba-cloud/tests/test_rate_limit_middleware.py:26` |
+| `POST` | `/verify-email` | `verify_email` | `lariba-cloud/src/api/auth.py:351` |
+| `POST` | `/{provider}/callback` | `oauth_callback_post` | `lariba-cloud/src/api/oauth_callback.py:38` |
+
+## Reviewed implementation concepts
+
+The B3 review observed the following concepts in its high-value source set:
+
+`login`, `passkey`, `session`, `recovery`, `verify`, `register`, `totp`, `oauth`, `logout`
+
+This signal list is supporting discovery evidence only; a keyword occurrence is not independently sufficient to establish behavior.
+
+## Representative domain/API symbols
+
+- `AccountCheckoutSessionIn` (class) — `lariba-cloud/src/api/billing_schemas.py:58`
+- `AccountCheckoutSessionOut` (class) — `lariba-cloud/src/api/billing_schemas.py:65`
+- `AuthPasskeyRegistrationOptionsRequest` (class) — `lariba-cloud/src/api/auth_schemas.py:115`
+- `AuthPasskeyRegistrationVerifyRequest` (class) — `lariba-cloud/src/api/auth_schemas.py:119`
+- `AuthSession` (class) — `lariba-cloud/src/models/auth_session.py:11`
+- `AuthTokenError` (class) — `lariba-cloud/src/services/auth.py:33`
+- `AuthTokens` (class) — `lariba-cloud/src/services/auth.py:38`
+- `CheckoutSessionIn` (class) — `lariba-cloud/src/api/billing_schemas.py:45`
+- `CheckoutSessionOut` (class) — `lariba-cloud/src/api/billing_schemas.py:51`
+- `ConnectedAuthAccount` (class) — `lariba-cloud/src/models/connected_auth_account.py:11`
+- `ConnectedAuthAccountResponse` (class) — `lariba-cloud/src/api/auth_schemas.py:170`
+- `ConnectedAuthAccountsResponse` (class) — `lariba-cloud/src/api/auth_schemas.py:182`
+- `ConnectorAuthConfiguration` (class) — `lariba-cloud/src/services/third_party_api_auth.py:40`
+- `ConnectorAuthError` (class) — `lariba-cloud/src/services/third_party_api_auth.py:32`
+
+## Supporting committed web paths
+
+- `app/(marketing)/docs/authentication/page.tsx`
+- `app/(marketing)/login/page.tsx`
+- `app/(marketing)/register/page.tsx`
+- `app/api/auth/oauth/[provider]/callback/route.ts`
+- `app/api/auth/oauth/[provider]/start/route.ts`
+- `app/api/auth/oauth/oauth-flow.ts`
+- `app/api/auth/oauth/providers/route.ts`
+- `app/api/register/route.ts`
+- `app/api/session/mfa/passkey/options/route.ts`
+- `app/api/session/mfa/passkey/verify/route.ts`
+- `app/api/session/mfa/recovery-code/verify/route.ts`
+- `app/api/session/mfa/totp/verify/route.ts`
+- `app/api/session/passkey/options/route.ts`
+- `app/api/session/passkey/passwordless/options/route.ts`
+- `app/api/session/passkey/passwordless/verify/route.ts`
+- `app/api/session/passkey/verify/route.ts`
+- `app/api/session/route.ts`
+- `app/components/auth-benefit-card.tsx`
+- `app/dashboard/events/sources/_lib/source-recovery-state.ts`
+- `app/lib/passkeys.ts`
+
+## Failure and authority rule
+
+A walkthrough claim is valid only to the extent that the current tracked implementation and verification evidence support it. When the guide, an older document, and current code/tests disagree, stop and reconcile the documentation rather than silently strengthening the claim.
+
+## B3 boundary
+
+This document does not authorize live production execution, database mutation, deployment, credential disclosure, or a gate transition.
