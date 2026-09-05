@@ -1,53 +1,41 @@
 # Alembic Workflow
 
-> Docs 0.4 public documentation.
+Lariba Cloud uses Alembic to manage PostgreSQL schema migrations.
 
-**Requirement:** B-013
-**Status:** controlled draft / evidence review required
+Run Alembic from the backend environment where the project dependencies are installed.
 
-## Current migration authority
+## Inspect migration heads
 
-Read-only reconciliation on 5 September 2026 established:
-
-```text
-Alembic CLI head count = 1
-Alembic ScriptDirectory head count = 1
-Canonical head = 20260831_a1_schema_authority
+```bash
+alembic heads
 ```
 
-Two revisions that a simplified static parser incorrectly classified as heads were confirmed to have children in Alembic's actual graph. Therefore the authoritative migration-head source is Alembic's script graph, not the simplified text parser.
+This reads the migration graph and does not apply migrations.
 
-## Read-only inspection
+## Inspect the current database revision
 
-From the backend directory:
-
-```text
-cd lariba-cloud
-.venv/bin/alembic heads
+```bash
+alembic current
 ```
 
-`heads` is script-graph metadata and does not migrate the database.
+This connects to the configured database and reports its applied revision.
 
-`alembic current` is different: it connects to the configured database to report its applied revision.
+## Upgrade a local development database
 
-## Tracked Alembic command sources
+When the configured database is the intended local development database:
 
-- `alembic upgrade` are not executed.` — source: `lariba-cloud/docs/operations/delivery-v1.9.3-production-release.md:303`
-
-## Mutation boundary
-
-Commands such as:
-
-```text
-alembic upgrade ...
-alembic downgrade ...
-alembic stamp ...
+```bash
+alembic upgrade head
 ```
 
-change database migration state or authority and must only be run against the intended environment under the applicable runbook/authorization.
+This changes the database schema. Verify the target database before running it.
 
-B2 does not authorize production migration.
+## Safety
 
-## Troubleshooting import context
+Do not run upgrade, downgrade, or stamp operations against an environment unless you have confirmed that environment is the intended target.
 
-Some migration modules import backend code such as `src.database.types`. When invoking Alembic's Python `ScriptDirectory` directly, execute from the backend context or ensure the backend root is on `PYTHONPATH`. The normal repository Alembic CLI invocation from the backend directory already provides the expected project context.
+Do not use a stamp operation to hide an unexplained migration mismatch.
+
+## Next step
+
+Continue with [Developer Golden Path](/developer/golden-path).

@@ -1,32 +1,35 @@
 # Installation
 
-> Docs 0.4 public documentation.
+This page covers the dependency-installation sequence used for local Lariba Cloud backend development.
 
-**Requirement:** B-010
-**Status:** controlled draft / evidence review required
+## Prerequisites
 
-## Workspace boundary
+Use the Python version selected by the current Lariba Cloud checkout and work inside an isolated local Python environment.
 
-The primary repository is the Lariba Cloud workspace. The canonical backend lives under:
+Run backend commands from the backend directory.
 
-```text
-lariba-cloud/
+## Install dependencies
+
+Upgrade `pip`:
+
+```bash
+python -m pip install -U pip
 ```
 
-Run backend-specific commands from that backend directory unless the command's tracked source explicitly says otherwise.
+Install runtime dependencies:
 
-## Current tracked bootstrap-command candidates
+```bash
+pip install -r requirements.txt
+```
 
-The following commands were discovered in current tracked repository sources and are preserved here with provenance for B2 review:
+Install development and test dependencies:
 
-- `pytest suite with coverage.` — source: `lariba-cloud/README.md:230`
-- `pytest selections without coverage by default. Set `BACKEND_TEST_SHARD=INDEX/TOTAL` — source: `lariba-cloud/README.md:249`
-- `python -m pip install -U pip` — source: `.github/workflows/ci.yml:74`
-- `pip install -r requirements.txt` — source: `.github/workflows/ci.yml:75`
-- `pip install -r requirements-dev.txt` — source: `.github/workflows/ci.yml:76`
+```bash
+pip install -r requirements-dev.txt
+```
 
-Do not treat a command as production deployment authority merely because it appears in a developer guide.
+## Next step
 
-## Verification
+Continue with [Environment Configuration](/developer/environment-configuration).
 
-After installation, use the repository's current quick/full check scripts or pytest commands that are explicitly tracked for the backend. B2 does not redefine CI policy.
+If dependency installation fails, see [Troubleshooting](/developer/troubleshooting).

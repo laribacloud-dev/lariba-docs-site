@@ -1,203 +1,63 @@
 # Developer Golden Path
 
-> Docs 0.4 public documentation.
+Use this path to move from a clean local checkout to the documented Lariba Cloud workflow surfaces.
 
-**Requirement:** B-020
-**Docs baseline:** 0.4
-**Status:** controlled draft / evidence review required
+## 1. Install dependencies
 
-This is the canonical Phase-B developer path for moving from a clean Lariba Cloud workspace to a locally running backend and then through the accepted authentication, source, ingestion, Sentinel, and delivery/recovery workflows.
+Follow [Installation](/developer/installation).
 
-It composes the accepted B2 developer-environment documentation and B3 product-workflow documentation. It does not replace those documents.
+## 2. Configure the local environment
 
-## Safety and scope
+Follow [Environment Configuration](/developer/environment-configuration).
 
-This path is for **local development only**.
+Use development-only credentials and services.
 
-Do not use production credentials, production databases, production deployment commands, real customer data, or uncommitted web-repository state. Do not commit `.env` values, JWTs, TOTP secrets, recovery codes, source credentials, delivery credentials, or OAuth secrets.
+## 3. Start PostgreSQL
 
-No command in this document was executed by the B4 evidence review itself.
+Follow [PostgreSQL Bootstrap](/developer/postgresql-bootstrap) and confirm that the local database is reachable.
 
-## 1. Enter the backend workspace
+## 4. Inspect migrations
 
-From the tracked workspace root:
+Follow [Alembic Workflow](/developer/alembic-workflow).
 
-```bash
-cd lariba-cloud
-```
+Inspect the migration state before applying schema changes.
 
-Source evidence: `README.md:76`.
+## 5. Start the backend
 
-**Checkpoint:** commands below that reference `.venv`, Alembic, backend requirements, or backend scripts are run from the canonical backend directory unless a step explicitly says otherwise.
-
-## 2. Install the backend dependencies
-
-The accepted B2 bootstrap evidence establishes dependency installation commands but does **not** establish a repository-authoritative virtual-environment creation or activation command. Therefore this Golden Path does not invent one.
-
-Use the local Python environment intended for Lariba Cloud development, then run the accepted dependency-install sequence:
-
-```bash
-python -m pip install -U pip
-```
-
-```bash
-pip install -r requirements.txt
-```
-
-```bash
-pip install -r requirements-dev.txt
-```
-
-Source evidence: `.github/workflows/ci.yml:74`, `.github/workflows/ci.yml:75`, `.github/workflows/ci.yml:76`.
-
-**Checkpoint:** backend runtime and development dependencies are installed in the selected local Python environment.
-
-If a future documentation tranche standardizes virtual-environment creation, this step should be updated rather than silently introducing an unreviewed convention.
-
-## 3. Configure the local environment
-
-Follow [`environment-configuration.md`](environment-configuration.md).
-
-Supply the required environment-variable names locally. Use placeholders/examples only where already documented. Never commit real secret values.
-
-**Checkpoint:** configuration is sufficient for the intended local backend/database workflow and no secret value has been added to tracked documentation.
-
-## 4. Establish or verify local PostgreSQL
-
-Follow [`postgresql-bootstrap.md`](postgresql-bootstrap.md).
-
-The tracked integration verification path includes:
-
-```bash
-bash scripts/postgres-integration-check.sh
-```
-
-Source evidence: `lariba-cloud/scripts/full-check.sh:14`.
-
-This script may create/use local integration database state. It is **not** a production command.
-
-**Checkpoint:** local PostgreSQL is available for the backend's documented development workflow.
-
-## 5. Inspect and reconcile the Alembic migration state
-
-Follow [`alembic-workflow.md`](alembic-workflow.md).
-
-Inspect the script graph head:
-
-```bash
-.venv/bin/alembic heads
-```
-
-Source evidence: `docs/developer/alembic-workflow.md:24`.
-
-For a local development database that is intended to be advanced to the tracked schema head, the repository contains:
-
-```bash
-.venv/bin/alembic upgrade head
-```
-
-Source evidence: `lariba-cloud/README.md:114`.
-
-This command mutates the configured database schema. Verify that the configured database is the intended **local development** database before running it. Never substitute production connection information.
-
-**Checkpoint:** migration state is consistent with the accepted local-development workflow. If it is not, stop and use the Alembic/troubleshooting documentation; do not stamp or downgrade blindly.
-
-## 6. Start the backend locally
-
-Use the tracked API process command:
+From the backend directory, run the API process in the local development environment:
 
 ```bash
 LARIBA_PROCESS_ROLE=api uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
-Source evidence: `lariba-cloud/README.md:189`.
+## 6. Authenticate
 
-**Checkpoint:** the local backend process is running and available for the documented workflow surfaces.
+Continue with [Authentication](/authentication).
 
-## 7. Authenticate
+Use a development identity and development credentials.
 
-Continue with `../workflows/authentication.md`.
+## 7. Create a source
 
-Use only local/development identities and credentials.
+Continue with [Source Creation](/guides/source-creation).
 
-**Checkpoint:** the authentication state required by subsequent protected workflow surfaces is established according to the accepted B3 contract.
+Keep source credentials private and rotate or revoke them when needed.
 
-## 8. Create or select a source
+## 8. Ingest an event
 
-Continue with `../workflows/source-creation.md`.
+Continue with [Event Ingestion](/guides/event-ingestion).
 
-Preserve source identity, credential, tenant/organisation, and lifecycle boundaries.
+Verify that the event appears in the intended development project.
 
-**Checkpoint:** a development source exists and its identity/credential handling follows the accepted workflow.
+## 9. Configure Sentinel
 
-## 9. Ingest an event
+Continue with [Sentinel](/guides/sentinel).
 
-Continue with `../workflows/event-ingestion.md`.
+## 10. Inspect delivery and recovery
 
-Preserve the documented event identity, idempotency, persistence, and source-attribution semantics.
+Continue with [Worker Health and Recovery](/operations/worker-health-and-recovery).
 
-**Checkpoint:** a development event can be traced through the accepted ingestion contract without weakening duplicate/conflict protections.
+## Troubleshooting
 
-## 10. Exercise Sentinel
+If a step fails, use [Troubleshooting](/developer/troubleshooting) before changing migration state or bypassing a failed check.
 
-Continue with `../workflows/sentinel.md`.
-
-Follow the accepted rule/evaluation/alert lifecycle rather than inferring behavior from older architecture material.
-
-**Checkpoint:** the development workflow demonstrates the documented Sentinel path and its verification evidence.
-
-## 11. Observe delivery / retry / recovery
-
-Continue with `../workflows/delivery-recovery.md`.
-
-Preserve attempt history, retry/replay, worker, failure, and recovery semantics.
-
-**Checkpoint:** delivery/recovery behavior is inspected through the accepted workflow without using production delivery credentials.
-
-## 12. Verify and troubleshoot
-
-Use [`troubleshooting.md`](troubleshooting.md) for failed checkpoints.
-
-The tracked quick verification command is:
-
-```bash
-./scripts/quick-check.sh
-```
-
-Source evidence: `README.md:77`.
-
-A broader tracked verification command is:
-
-```bash
-./scripts/full-check.sh
-```
-
-Source evidence: `README.md:56`.
-
-Do not bypass a failed check merely to complete the Golden Path.
-
-## Optional committed web development surface
-
-The web application is a separate repository. The B4 review pinned committed web HEAD:
-
-```text
-```
-
-The local web working tree was dirty during review, so **uncommitted web state is not canonical Golden Path evidence**.
-
-Committed package scripts included a development script equivalent to `npm run dev`. Use it only from a checkout whose committed state is intentionally selected for the developer session; this B4 document does not authorize or mutate that repository.
-
-## Completion boundary
-
-Completing this Golden Path demonstrates the Phase-B `B-020` documentation path only.
-
-It does **not** mean:
-
-```text
-Phase B complete
-Phase C activated
-G1 accepted
-production deployment authorized
-```
-
-`B-021` documentation CI, `B-022` OpenAPI/docs drift controls, and `B-023` stale-capability claim review remain separate Phase-B requirements.
+This guide is for local development. Production changes require the production deployment and operations procedures for the target environment.

@@ -1,41 +1,28 @@
 # Developer Environment
 
-> Docs 0.4 public documentation.
+Docs 0.4 adds a focused setup path for developers working with Lariba Cloud locally.
 
-**Docs baseline:** 0.4
-**Phase:** B / B2
-**Status:** controlled draft / evidence review required
+## Start here
 
-This directory documents the current developer-environment path for the Lariba Cloud workspace.
+1. [Installation](/developer/installation)
+2. [Environment Configuration](/developer/environment-configuration)
+3. [PostgreSQL Bootstrap](/developer/postgresql-bootstrap)
+4. [Alembic Workflow](/developer/alembic-workflow)
+5. [Developer Golden Path](/developer/golden-path)
+6. [Troubleshooting](/developer/troubleshooting)
 
-The documentation is source-backed and intentionally separates:
+## Local-development boundary
 
-- installation and workspace entry;
-- environment configuration;
-- PostgreSQL bootstrap/verification;
-- Alembic migration workflow;
-- troubleshooting.
+Use these pages for development and test environments.
 
-These documents do not establish Phase-C reproducibility. Phase C later proves the documented path across clean machines and portable environments.
+Do not use production credentials, production databases, or customer data while following the local developer path. Keep environment-specific secrets outside documentation and source control.
 
-## Current B2 scope
+## Product workflow guides
 
-```text
-B-010 Developer installation documentation
-B-011 Environment configuration documentation
-B-012 PostgreSQL bootstrap documentation
-B-013 Alembic workflow documentation
-B-019 Troubleshooting foundation
-```
+Once the local environment is ready, continue with:
 
-## Safety boundary
-
-Do not copy real secrets, production credentials, or production database URLs into documentation, shell history, screenshots, or tracked `.env` files.
-
-See the individual guides in this directory.
-
-## Developer Golden Path
-
-For the canonical end-to-end developer sequence, use [`golden-path.md`](golden-path.md).
-
-The Golden Path composes the accepted installation, environment, PostgreSQL, Alembic, authentication, source, ingestion, Sentinel, delivery/recovery, and troubleshooting documentation. It does not replace those source documents.
+- [Authentication](/authentication)
+- [Source Creation](/guides/source-creation)
+- [Event Ingestion](/guides/event-ingestion)
+- [Sentinel](/guides/sentinel)
+- [Worker Health and Recovery](/operations/worker-health-and-recovery)

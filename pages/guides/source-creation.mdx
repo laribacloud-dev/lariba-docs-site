@@ -1,109 +1,42 @@
 # Source Creation
 
-> Docs 0.4 public documentation.
+An Event Source identifies a system or producer that sends events to Lariba Cloud.
 
-**Requirement:** B-015
-**Status:** controlled draft / evidence review required
+Use a separate source for each producer or integration boundary that needs its own identity and credential lifecycle.
 
-## Purpose
+## Create a source
 
-Document the current implemented workflow for source creation, source identity, credential/key handling and lifecycle without converting planned architecture or uncommitted product state into implementation claims.
+Create the source from the Lariba Cloud source-management surface available in your environment.
 
-## Current route contract inventory
+Give the source a clear name that identifies the producer or integration.
 
-| Method | Decorator path | Function | Source |
-|---|---|---|---|
-| `DELETE` | `/notification-triggers/{trigger_id}` | `delete_source_intelligence_notification_trigger` | `lariba-cloud/src/api/source_intelligence.py:624` |
-| `DELETE` | `/saved-views/{saved_view_id}` | `delete_source_intelligence_saved_view` | `lariba-cloud/src/api/source_intelligence.py:316` |
-| `DELETE` | `/{source_id}` | `delete_ingest_source` | `lariba-cloud/src/api/ingest_sources.py:558` |
-| `DELETE` | `/{source_id}/api/schedule` | `disable_third_party_api_schedule` | `lariba-cloud/src/api/ingest_sources_api_config.py:743` |
-| `GET` | `(empty decorator path; router prefix/source context applies)` | `list_ingest_sources` | `lariba-cloud/src/api/ingest_sources.py:172` |
-| `GET` | `/audit-events` | `list_source_intelligence_audit_events` | `lariba-cloud/src/api/source_intelligence.py:453` |
-| `GET` | `/investigations` | `list_source_intelligence_investigations` | `lariba-cloud/src/api/source_intelligence.py:374` |
-| `GET` | `/notification-triggers` | `list_source_intelligence_notification_triggers` | `lariba-cloud/src/api/source_intelligence.py:551` |
-| `GET` | `/saved-views` | `list_source_intelligence_saved_views` | `lariba-cloud/src/api/source_intelligence.py:250` |
-| `GET` | `/{source_id}/activity` | `list_ingest_source_activity` | `lariba-cloud/src/api/ingest_sources.py:439` |
-| `GET` | `/{source_id}/api/config` | `get_third_party_api_config` | `lariba-cloud/src/api/ingest_sources_api_config.py:577` |
-| `GET` | `/{source_id}/api/runs` | `list_third_party_api_runs` | `lariba-cloud/src/api/ingest_sources_api_config.py:660` |
-| `GET` | `/{source_id}/api/schedule` | `get_third_party_api_schedule` | `lariba-cloud/src/api/ingest_sources_api_config.py:687` |
-| `GET` | `/{source_id}/browser-keys` | `list_browser_source_keys` | `lariba-cloud/src/api/ingest_sources_browser_keys.py:145` |
-| `GET` | `/{trigger_id}/deliveries` | `list_source_intelligence_trigger_deliveries` | `lariba-cloud/src/api/source_intelligence_deliveries.py:170` |
-| `PATCH` | `/notification-triggers/{trigger_id}` | `update_source_intelligence_notification_trigger` | `lariba-cloud/src/api/source_intelligence.py:586` |
-| `PATCH` | `/saved-views/{saved_view_id}` | `update_source_intelligence_saved_view` | `lariba-cloud/src/api/source_intelligence.py:283` |
-| `PATCH` | `/{source_id}` | `update_ingest_source` | `lariba-cloud/src/api/ingest_sources.py:229` |
-| `PATCH` | `/{trigger_id}/deliveries/{delivery_id}` | `update_source_intelligence_trigger_delivery` | `lariba-cloud/src/api/source_intelligence_deliveries.py:204` |
-| `POST` | `(empty decorator path; router prefix/source context applies)` | `create_ingest_source` | `lariba-cloud/src/api/ingest_sources.py:95` |
-| `POST` | `/audit-events` | `create_source_intelligence_audit_event` | `lariba-cloud/src/api/source_intelligence.py:405` |
-| `POST` | `/investigations` | `create_source_intelligence_investigation` | `lariba-cloud/src/api/source_intelligence.py:339` |
-| `POST` | `/notification-triggers` | `create_source_intelligence_notification_trigger` | `lariba-cloud/src/api/source_intelligence.py:484` |
-| `POST` | `/run-due` | `run_due_third_party_api_connectors` | `lariba-cloud/src/api/ingest_sources_api_config.py:983` |
-| `POST` | `/saved-views` | `create_source_intelligence_saved_view` | `lariba-cloud/src/api/source_intelligence.py:216` |
-| `POST` | `/{source_id}/api/run` | `run_third_party_api_ingestion` | `lariba-cloud/src/api/ingest_sources_api_config.py:855` |
-| `POST` | `/{source_id}/api/test` | `test_third_party_api_connection` | `lariba-cloud/src/api/ingest_sources_api_config.py:764` |
-| `POST` | `/{source_id}/archive` | `archive_ingest_source` | `lariba-cloud/src/api/ingest_sources.py:467` |
-| `POST` | `/{source_id}/browser-keys` | `create_browser_source_key` | `lariba-cloud/src/api/ingest_sources_browser_keys.py:48` |
-| `POST` | `/{source_id}/browser-keys/{key_id}/revoke` | `revoke_browser_source_key` | `lariba-cloud/src/api/ingest_sources_browser_keys.py:307` |
-| `POST` | `/{source_id}/browser-keys/{key_id}/test` | `test_browser_source_key` | `lariba-cloud/src/api/ingest_sources_browser_keys.py:176` |
-| `POST` | `/{source_id}/intelligence/snapshot` | `create_ingest_source_intelligence_snapshot` | `lariba-cloud/src/api/ingest_sources_intelligence_routes.py:32` |
-| `POST` | `/{source_id}/rotate-key` | `rotate_ingest_source_key` | `lariba-cloud/src/api/ingest_sources.py:385` |
-| `POST` | `/{source_id}/test-event` | `send_ingest_source_test_event` | `lariba-cloud/src/api/ingest_sources_test_events.py:35` |
-| `POST` | `/{source_id}/toggle` | `toggle_ingest_source` | `lariba-cloud/src/api/ingest_sources.py:290` |
-| `POST` | `/{trigger_id}/deliveries` | `create_source_intelligence_trigger_delivery` | `lariba-cloud/src/api/source_intelligence_deliveries.py:130` |
-| `PUT` | `/{source_id}/api/config` | `upsert_third_party_api_config` | `lariba-cloud/src/api/ingest_sources_api_config.py:598` |
-| `PUT` | `/{source_id}/api/schedule` | `update_third_party_api_schedule` | `lariba-cloud/src/api/ingest_sources_api_config.py:705` |
+## Credential handling
 
-## Reviewed implementation concepts
+Treat source credentials as secrets.
 
-The B3 review observed the following concepts in its high-value source set:
+- store credentials in the producer's secret-management mechanism;
+- do not commit credentials to source control;
+- do not paste credentials into documentation or tickets;
+- rotate or revoke credentials when they are no longer trusted.
 
-`source`, `key`, `browser`, `enabled`, `revoke`, `disabled`
+## Source lifecycle
 
-This signal list is supporting discovery evidence only; a keyword occurrence is not independently sufficient to establish behavior.
+Source management supports the normal lifecycle of an event producer, including:
 
-## Representative domain/API symbols
+- creating and listing sources;
+- updating source configuration;
+- enabling or disabling a source;
+- rotating or revoking source credentials;
+- archiving sources that are no longer active;
+- inspecting source activity.
 
-- `BrowserSourceKeyListResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:187`
-- `BrowserSourceKeyResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:166`
-- `CreateBrowserSourceKeyRequest` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:150`
-- `CreateBrowserSourceKeyResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:181`
-- `CreateIngestSourceRequest` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:8`
-- `CreateIngestSourceWithKeyResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:110`
-- `DeleteIngestSourceResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:128`
-- `IngestSource` (class) — `lariba-cloud/src/models/ingest_source.py:11`
-- `IngestSourceActivity` (class) — `lariba-cloud/src/models/ingest_source_activity.py:13`
-- `IngestSourceActivityListResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:225`
-- `IngestSourceActivityResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:212`
-- `IngestSourceListResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:103`
-- `IngestSourceResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:51`
-- `RevokeBrowserSourceKeyResponse` (class) — `lariba-cloud/src/api/ingest_sources_schemas.py:191`
+Additional connection options can be available depending on the source type.
 
-## Supporting committed web paths
+## Test before sending production traffic
 
-- `app/(marketing)/docs/event-sources/page.tsx`
-- `app/dashboard/alerts/_lib/alert-source-intelligence.ts`
-- `app/dashboard/events/sources/_components/deferred-dashboard-panel.tsx`
-- `app/dashboard/events/sources/_components/event-sources-page-content.tsx`
-- `app/dashboard/events/sources/_components/event-sources-ui.tsx`
-- `app/dashboard/events/sources/_components/sentinel-automation-dashboard-panels.tsx`
-- `app/dashboard/events/sources/_components/sentinel-automation-panels.tsx`
-- `app/dashboard/events/sources/_components/source-activity-diagnostics-panel.tsx`
-- `app/dashboard/events/sources/_components/source-details-analytics-panel.tsx`
-- `app/dashboard/events/sources/_components/source-details-contract-panel.tsx`
-- `app/dashboard/events/sources/_components/source-details-footer.tsx`
-- `app/dashboard/events/sources/_components/source-details-header.tsx`
-- `app/dashboard/events/sources/_components/source-details-overview.tsx`
-- `app/dashboard/events/sources/_components/source-details-panel.tsx`
-- `app/dashboard/events/sources/_components/source-details-pipeline.tsx`
-- `app/dashboard/events/sources/_components/source-explorer-table.tsx`
-- `app/dashboard/events/sources/_components/source-intelligence-dashboard-panels.tsx`
-- `app/dashboard/events/sources/_components/source-intelligence-investigation-actions-panel.tsx`
-- `app/dashboard/events/sources/_components/source-intelligence-overview-panels.tsx`
-- `app/dashboard/events/sources/_components/source-intelligence-persistence-activity-panel.tsx`
+Use a development source first. Confirm that the source can send a test event and that the event appears in the expected project before switching a producer to normal traffic.
 
-## Failure and authority rule
+## Next steps
 
-A walkthrough claim is valid only to the extent that the current tracked implementation and verification evidence support it. When the guide, an older document, and current code/tests disagree, stop and reconcile the documentation rather than silently strengthening the claim.
-
-## B3 boundary
-
-This document does not authorize live production execution, database mutation, deployment, credential disclosure, or a gate transition.
+- [Event Ingestion](/guides/event-ingestion)
+- [Sentinel](/guides/sentinel)

@@ -1,32 +1,31 @@
 # PostgreSQL Bootstrap
 
-> Docs 0.4 public documentation.
+Lariba Cloud uses PostgreSQL for persistent application data.
 
-**Requirement:** B-012
-**Status:** controlled draft / evidence review required
+This page covers local development only.
 
-## Connection authority
+## Create a local database
 
-The repository uses `DATABASE_URL` as a primary database connection input in current source surfaces. PostgreSQL-specific tests also reference `POSTGRES_TEST_DATABASE_URL`.
+Create a development database with the PostgreSQL tools available on your machine. For example:
 
-Do not paste real database URLs into documentation.
-
-## Tracked bootstrap / client command candidates
-
-- `createdb --maintenance-db=postgres "${CREATED_DATABASE}"` — source: `lariba-cloud/scripts/postgres-integration-check.sh:33`
-
-## Verification path
-
-The tracked backend contains:
-
-```text
-lariba-cloud/scripts/postgres-integration-check.sh
+```bash
+createdb lariba_cloud_dev
 ```
 
-Use the repository's current script semantics when validating local PostgreSQL integration. B2 documentation must not reinterpret a production recovery or production migration command as a normal developer bootstrap command.
+Choose a local database name that is clearly separated from staging and production.
 
-## Safety
+## Configure the backend
 
-The B2 evidence process did not create, drop, reset, upgrade, or mutate a database.
+Point the local backend at the development database through your local environment configuration.
 
-Database-destructive recovery procedures belong to their explicit operations runbooks, not the normal developer bootstrap path.
+Do not place database credentials in documentation or source control.
+
+## Verify connectivity
+
+Before running migrations, confirm that PostgreSQL is running and that the backend can reach the intended local database.
+
+If the connection fails, see [Troubleshooting](/developer/troubleshooting).
+
+## Next step
+
+Continue with [Alembic Workflow](/developer/alembic-workflow).

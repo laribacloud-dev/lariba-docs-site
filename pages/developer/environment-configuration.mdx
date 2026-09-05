@@ -1,74 +1,30 @@
 # Environment Configuration
 
-> Docs 0.4 public documentation.
+Keep environment-specific configuration outside source control.
 
-**Requirement:** B-011
-**Status:** controlled draft / evidence review required
+## Local development
 
-## Rule
+Configure the local backend with only the services required for the feature you are developing or testing. Typical categories include:
 
-This document records environment-variable **names and source locations only**. It does not contain real environment values.
+- the local database connection;
+- optional queue or cache services;
+- local authentication and integration settings;
+- public browser configuration used by the web application.
 
-Never commit production secrets or credentials.
+Use development-only values. Do not reuse production credentials in a local environment.
 
-## Discovered environment inputs
+## Secret handling
 
-| Variable | Handling class | Tracked source examples |
-|---|---|---|
-| `A1_RECOVERY_VERIFY_DATABASE` | configuration/runtime input | `lariba-cloud/tests/postgres/test_a1_legacy_recovery.py` |
-| `ADMIN_SECRET` | sensitive-or-connection input | `.github/workflows/ci.yml` |
-| `ALERT_RETRY_WORKER_ID` | configuration/runtime input | `lariba-cloud/src/runtime.py` |
-| `AUTH_EMAIL_DELIVERY_MODE` | configuration/runtime input | `lariba-cloud/tests/conftest.py` |
-| `AUTH_LOGIN_RATE_LIMIT_IP` | configuration/runtime input | `.github/workflows/ci.yml`, `lariba-cloud/src/middleware/rate_limit.py` |
-| `AUTH_REGISTER_RATE_LIMIT_IP` | configuration/runtime input | `.github/workflows/ci.yml`, `lariba-cloud/src/middleware/rate_limit.py` |
-| `BACKEND_TEST_SHARD` | configuration/runtime input | `lariba-cloud/scripts/pytest_shard.py` |
-| `BACKEND_TEST_SHARD_INDEX` | configuration/runtime input | `lariba-cloud/scripts/pytest_shard.py` |
-| `BACKEND_TEST_SHARD_TOTAL` | configuration/runtime input | `lariba-cloud/scripts/pytest_shard.py` |
-| `DATABASE_URL` | sensitive-or-connection input | `.github/workflows/ci.yml`, `lariba-cloud/alembic/env.py`, `lariba-cloud/scripts/check_migration_integrity.py`, `lariba-cloud/src/database/db.py`, +1 more |
-| `DELIVERY_ACCEPTANCE_INITIAL_MODE` | configuration/runtime input | `acceptance/lariba-delivery-acceptance-sink/app/main.py` |
-| `DELIVERY_ACCEPTANCE_RELEASE_ID` | configuration/runtime input | `acceptance/lariba-delivery-acceptance-sink/app/main.py` |
-| `DELIVERY_CREDENTIAL_ACTIVE_KEY_VERSION` | sensitive-or-connection input | `lariba-cloud/tests/conftest.py` |
-| `DELIVERY_CREDENTIAL_KEY_V1` | sensitive-or-connection input | `lariba-cloud/tests/conftest.py` |
-| `DELIVERY_RETRY_WORKER_ID` | configuration/runtime input | `lariba-cloud/src/runtime.py` |
-| `EVENT_WORKER_COUNT` | configuration/runtime input | `lariba-cloud/src/runtime.py` |
-| `FORCE_DATABASE_URL` | sensitive-or-connection input | `.github/workflows/ci.yml`, `lariba-cloud/alembic/env.py`, `lariba-cloud/scripts/check_migration_integrity.py` |
-| `FREE_EVENTS_PER_DAY` | configuration/runtime input | `lariba-cloud/src/api/events_ingestion.py` |
-| `GITHUB_STEP_SUMMARY` | configuration/runtime input | `lariba-cloud/scripts/check_openapi_snapshot.py` |
-| `LARIBA_API_KEY` | sensitive-or-connection input | `labcloud-js/README.md`, `lariba-cloud/docs/examples/ingest-events.md` |
-| `LARIBA_API_KEY_PEPPER` | sensitive-or-connection input | `lariba-cloud/tests/conftest.py` |
-| `LARIBA_CRON_SECRET` | sensitive-or-connection input | `lariba-cloud/src/api/ingest_sources_api_config.py` |
-| `LARIBA_ENV` | configuration/runtime input | `lariba-cloud/src/settings.py`, `lariba-cloud/tests/conftest.py` |
-| `NEXT_PUBLIC_API_BASE_URL` | configuration/runtime input | `lariba-cloud/app/dashboard/alerts/page.tsx` |
-| `OPENAPI_DRIFT_ARTIFACT_DIR` | configuration/runtime input | `lariba-cloud/scripts/check_openapi_snapshot.py` |
-| `PATH` | configuration/runtime input | `acceptance/delivery-v1.9.3/run_acceptance.py`, `acceptance/delivery-v1.9.3/tests/test_run_acceptance.py`, `scripts/audit_delivery_v1_9_3_production_duplicates.py` |
-| `POSTGRES_TEST_DATABASE_URL` | sensitive-or-connection input | `lariba-cloud/tests/postgres/test_delivery_evaluation_channels_migration.py`, `lariba-cloud/tests/postgres/test_postgres_integration.py` |
-| `PYTHONPATH` | configuration/runtime input | `.github/workflows/ci.yml` |
-| `RATE_LIMIT_BACKEND` | configuration/runtime input | `lariba-cloud/src/middleware/rate_limit.py` |
-| `RATE_LIMIT_REDIS_URL` | sensitive-or-connection input | `lariba-cloud/src/middleware/rate_limit.py` |
-| `REDIS_URL` | sensitive-or-connection input | `lariba-cloud/src/events/event_queue.py`, `lariba-cloud/src/middleware/rate_limit.py` |
-| `SECRET_KEY` | sensitive-or-connection input | `lariba-cloud/tests/conftest.py` |
-| `SECRET_MASTER_KEY` | sensitive-or-connection input | `lariba-cloud/src/security/secrets_crypto.py` |
-| `STRIPE_CANCEL_URL` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_PORTAL_RETURN_URL` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_PRICE_ID_ENTERPRISE` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_PRICE_ID_PRO` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_PRICE_ID_PRO_EUR` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_PRICE_ID_SCALE` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_SECRET_KEY` | sensitive-or-connection input | `lariba-cloud/src/services/billing_helpers.py`, `lariba-cloud/src/services/stripe_client.py` |
-| `STRIPE_SUCCESS_URL` | configuration/runtime input | `lariba-cloud/src/services/billing_helpers.py` |
-| `STRIPE_WEBHOOK_SECRET` | sensitive-or-connection input | `lariba-cloud/src/services/stripe_client.py` |
-| `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | configuration/runtime input | `lariba-cloud/src/services/stripe_client.py` |
-| `TRACE_FILE` | configuration/runtime input | `lariba-cloud/tests/test_backend_production_deploy_script.py` |
-| `UPGRADE_URL` | configuration/runtime input | `.github/workflows/ci.yml`, `lariba-cloud/src/api/billing.py` |
-| `USER` | configuration/runtime input | `lariba-cloud/tests/postgres/test_a1_legacy_recovery.py` |
-| `WORKER_INSTANCE_ID` | configuration/runtime input | `lariba-cloud/src/runtime.py` |
+Never place passwords, API credentials, signing material, database credentials, or third-party service secrets in documentation.
 
-## High-sensitivity handling
+Keep secret values in the local environment or an approved secret-management mechanism. Commit only documented placeholders or templates that are explicitly intended for source control.
 
-Names containing concepts such as `SECRET`, `TOKEN`, `KEY`, `PEPPER`, `DATABASE_URL`, or `REDIS_URL` must be treated as sensitive or connection-bearing inputs unless their owning implementation explicitly defines them otherwise.
+Browser-visible configuration must never contain server-side secrets.
 
-`NEXT_PUBLIC_*` variables are browser-visible by design and must never contain server-side secrets.
+## Environment separation
 
-## Configuration authority
+Use separate configuration for development, staging, and production. A local development command should not depend on production-only values.
 
-When documentation and implementation disagree, current tracked settings/configuration code and accepted repository evidence control. Do not infer defaults that are not explicitly present in current source.
+## Next step
+
+Continue with [PostgreSQL Bootstrap](/developer/postgresql-bootstrap).
