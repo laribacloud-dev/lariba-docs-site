@@ -80,7 +80,7 @@ Lariba Cloud is composed of multiple repositories.
 
 ### Core API
 
-https://github.com/laribacloud/lariba-cloud
+https://github.com/node63labs/lariba-cloud
 
 FastAPI backend powering event ingestion, authentication, usage tracking, and billing.
 
