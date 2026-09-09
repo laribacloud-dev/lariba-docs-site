@@ -11,8 +11,8 @@
     "check": "npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
-    "@laribacloud/lariba-sdk-js": "github:laribacloud/lariba-sdk-js",
-    "lariba-sdk": "github:laribacloud/lariba-sdk-js",
+    "@laribacloud/lariba-sdk-js": "github:node63labs/lariba-sdk-js",
+    "lariba-sdk": "github:node63labs/lariba-sdk-js",
     "next": "16.2.6",
     "nextra": "2.13.4",
     "nextra-theme-docs": "2.13.4",
