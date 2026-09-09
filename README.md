@@ -86,13 +86,13 @@ FastAPI backend powering event ingestion, authentication, usage tracking, and bi
 
 ### API Specification
 
-https://github.com/laribacloud/lariba-spec
+https://github.com/node63labs/lariba-spec
 
 OpenAPI specification describing the Lariba Cloud API.
 
 ### JavaScript SDK
 
-https://github.com/laribacloud/lariba-sdk-js
+https://github.com/node63labs/lariba-sdk-js
 
 Official JavaScript SDK for sending events to Lariba Cloud.
 
