@@ -1,119 +1,65 @@
-# Lariba Cloud Docs
+# Lariba Cloud Developer Documentation
 
-Public developer documentation for **Lariba Cloud**.
+Official public developer documentation for **Lariba Cloud**.
 
-This site provides guides, API references, and SDK usage examples to help developers integrate with the Lariba Cloud event ingestion and analytics platform.
+This repository contains guides, API references, SDK guidance, integration examples, and public product concepts intended for developers integrating with Lariba Cloud.
 
----
+## Documentation scope
 
-## Overview
+The public documentation covers:
 
-Lariba Cloud is a developer platform for collecting, processing, and analyzing application events.
+- Quickstart and event ingestion
+- Authentication and API keys
+- Organizations, projects, and Event Sources
+- Public API reference material
+- SDK availability and compatibility guidance
+- Billing, webhooks, Sentinel, and other documented product workflows
+- Public changelog information
 
-The documentation covers:
+## Public boundary
 
-- Quickstart guides
-- Event ingestion
-- API authentication
-- SDK usage
-- Usage and billing
-- Project and API key management
+This repository documents Lariba Cloud's **public developer surface**.
 
----
+Lariba Cloud production applications, control-plane implementation, deployment infrastructure, internal engineering workflows, security-sensitive implementation, recovery tooling, and proprietary automation are maintained outside this public repository.
 
-## Documentation Structure
+> **Public interfaces. Private implementation. Clear boundaries.**
 
-```
-pages/
-  index.mdx        # Introduction
-  quickstart.mdx   # Getting started guide
-```
+## Local development
 
-The documentation site is built using **Next.js** and **Nextra**.
-
----
-
-## Local Development
-
-Install dependencies:
+Install dependencies from the lockfile:
 
 ```bash
-npm install
+npm ci
 ```
 
-Start the development server:
+Start the documentation site:
 
 ```bash
 npm run dev
 ```
 
-Open the site locally:
-
-```
-http://localhost:3000
-```
-
----
-
-## Build for Production
+Run the repository validation suite:
 
 ```bash
-npm run build
-npm start
+npm run check
 ```
 
----
+The site is built with **Next.js**, **Nextra**, **React**, and **TypeScript**.
 
-## Technology Stack
+## Public developer resources
 
-- Next.js
-- Nextra
-- Nextra Docs Theme
-- React
-- TypeScript
+- [Lariba Cloud API specification](https://github.com/node63labs/lariba-spec)
+- [Lariba Cloud JavaScript/TypeScript SDK](https://github.com/node63labs/lariba-sdk-js)
+- [NODE63 Labs on GitHub](https://github.com/node63labs)
 
----
+## Security
 
-## Related Repositories
+Do not disclose credentials, API keys, secrets, private infrastructure details, or suspected vulnerabilities in public issues.
 
-Lariba Cloud is composed of multiple repositories.
-
-### Core API
-
-https://github.com/node63labs/lariba-cloud
-
-FastAPI backend powering event ingestion, authentication, usage tracking, and billing.
-
-### API Specification
-
-https://github.com/node63labs/lariba-spec
-
-OpenAPI specification describing the Lariba Cloud API.
-
-### JavaScript SDK
-
-https://github.com/node63labs/lariba-sdk-js
-
-Official JavaScript SDK for sending events to Lariba Cloud.
-
----
-
-## Example Event
-
-```javascript
-import { Lariba } from "@laribacloud/lariba-sdk-js"
-
-const lariba = new Lariba({
-  apiKey: process.env.LARIBA_API_KEY
-})
-
-await lariba.track("user.signup", {
-  plan: "starter"
-})
-```
-
----
+Use the security-reporting guidance published by NODE63 Labs or the relevant Lariba Cloud public repository when available.
 
 ## License
 
-MIT License © Lariba Cloud
+This repository is licensed under the [MIT License](./LICENSE).
+
+Copyright © 2026 NODE63 Labs.

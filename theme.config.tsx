@@ -5,17 +5,17 @@ const config: DocsThemeConfig = {
   logo: <span>Lariba Cloud</span>,
 
   project: {
-    link: 'https://github.com/laribacloud'
+    link: 'https://github.com/node63labs'
   },
 
   docsRepositoryBase:
-    'https://github.com/laribacloud-dev/lariba-docs-site/blob/main',
+    'https://github.com/node63labs/lariba-docs-site/blob/main',
 
   useNextSeoProps() {
     return {
       titleTemplate: '%s | Lariba Cloud Docs',
       description:
-        'Official developer documentation for the Lariba Cloud operational event control plane.',
+        'Official public developer documentation for Lariba Cloud.',
       openGraph: {
         type: 'website',
         siteName: 'Lariba Cloud Docs'
@@ -28,7 +28,7 @@ const config: DocsThemeConfig = {
   },
 
   footer: {
-    text: `MIT ${new Date().getFullYear()} © Lariba Cloud.`
+    text: `MIT ${new Date().getFullYear()} © NODE63 Labs.`
   }
 }
 
