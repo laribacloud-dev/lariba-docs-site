@@ -1,65 +1,54 @@
 # Quickstart
 
-This guide shows how to send your first event to **Lariba Cloud**.
+This guide shows how to send your first event to **Lariba Cloud** using the public HTTP ingestion contract.
 
----
+## 1) Get an API key
 
-## 1) Get an API Key
+Create an API key for the intended Lariba Cloud project or Event Source with the required ingestion scope.
 
-Create an API key in your **Lariba Cloud dashboard**.
-
-You will use this key to authenticate API requests from your application.
-
-Example:
+Store the API origin and credential outside source control:
 
 ```bash
-LARIBA_API_KEY=sk_test_123456
+export LARIBA_API_BASE_URL="https://your-lariba-api.example"
+export LARIBA_SOURCE_API_KEY="YOUR_API_KEY"
 ```
 
----
+Do not place API keys in browser bundles, committed files, logs, screenshots, or URLs.
 
-## 2) Install the JavaScript SDK
-
-Install the Lariba SDK directly from GitHub:
+## 2) Send your first event
 
 ```bash
-npm install @laribacloud/lariba-sdk-js@github:node63labs/lariba-sdk-js
+curl --request POST \
+  "${LARIBA_API_BASE_URL}/v1/events/ingest" \
+  --header "Content-Type: application/json" \
+  --header "X-API-Key: $LARIBA_SOURCE_API_KEY" \
+  --data '{
+    "event_type": "user.signup",
+    "source": "account-service",
+    "properties": {
+      "plan": "starter"
+    }
+  }'
 ```
 
----
+A successful request returns HTTP `200` with the accepted event information.
 
-## 3) Send your first event
+## 3) Verify the event
 
-```ts
-import { Lariba } from "@laribacloud/lariba-sdk-js"
+Open the relevant Lariba Cloud project and inspect the Events surface or use the documented Events API.
 
-const lariba = new Lariba({
-  apiKey: process.env.LARIBA_API_KEY!
-})
+The accepted event should retain the producer identity and event type supplied by the request.
 
-await lariba.track("user.signup", {
-  plan: "starter"
-})
-```
+## SDK note
 
----
+A public JavaScript/TypeScript SDK repository is available, but it remains a **developer-preview integration surface** until its event-ingestion contract is aligned with the canonical public HTTP ingestion contract.
 
-## 4) Verify the event
+See [SDKs](/sdks) for the current compatibility boundary.
 
-Open your **Lariba Cloud dashboard → Events**.
+## Next steps
 
-You should see an event like:
-
-```
-user.signup
-```
-
----
-
-## Next Steps
-
-Continue exploring the Lariba Cloud platform:
-
-- Event ingestion API
-- API Keys
-- Usage & billing
+- [Event Ingestion](/guides/event-ingestion)
+- [Authentication](/authentication)
+- [API Keys](/api-keys)
+- [Events API](/reference/events)
+- [SDKs](/sdks)
